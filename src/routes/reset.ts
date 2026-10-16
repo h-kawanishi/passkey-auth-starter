@@ -54,11 +54,16 @@ function mailBody(link: string): string {
  * 時間を測るだけで登録の有無が分かってしまうため（列挙防止）。
  * 失敗は握りつぶさずにログへ残す。ただし例外の文には本文（＝トークン入りのリンク）が含まれうるので、
  * 例外の種類だけを書く（S12）。
+ *
+ * Mailer は利用者が差し替える前提なので、Promise を返す前に同期で例外を投げる実装もありうる。
+ * そのまま .send(...).catch(...) と書くと同期の例外は .catch に届かず、プロセスが落ちる
+ * （未ログインの誰でも /reset を 1 回送るだけでサーバーを止められる）うえ、例外の文が標準エラーにそのまま出る。
+ * Promise.resolve().then(...) の中で呼び、同期の例外も同じ .catch に流す。
  */
 function sendLater(request: FastifyRequest, to: string, link: string): void {
   setImmediate(() => {
-    request.server.mailer
-      .send(to, 'パスワード再設定のご案内', mailBody(link))
+    Promise.resolve()
+      .then(() => request.server.mailer.send(to, 'パスワード再設定のご案内', mailBody(link)))
       .catch((err: unknown) => {
         request.log.error(
           { errName: err instanceof Error ? err.name : typeof err },
@@ -143,7 +148,9 @@ export const resetRoutes: FastifyPluginCallback = (app, _opts, done) => {
         updatePasswordHash(app.db, userId, passwordHash);
         // 同じ人に送った他のリンクも使えなくする
         invalidateResetTokensOfUser(app.db, userId, now);
-        // パスワードを知った第三者がすでに入っていたかもしれないので、全端末をログアウトさせる
+        // パスワードを知った第三者がすでに入っていたかもしれないので、全端末をログアウトさせる。
+        // ただしパスキー（credentials）には触れない。乗っ取られている間に追加されたパスキーは残るので、
+        // 再設定だけでは攻撃者を締め出せない場合がある（threat-model.md §4 の「残るリスク」、対策は §10 で判断待ち）
         const sessionsEnded = deleteSessionsOfUser(app.db, userId);
         return { userId, sessionsEnded };
       })();

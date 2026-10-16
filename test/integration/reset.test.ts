@@ -1,8 +1,10 @@
 // パスワード忘れ（S10, S11）の結合テスト。
 import { performance } from 'node:perf_hooks';
+import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { RESET_TOKEN_TTL_MS } from '../../src/auth/reset.js';
+import type { Mailer } from '../../src/mail/mailer.js';
 import { RESET_MAILS_PER_WINDOW } from '../../src/routes/reset.js';
 import { body, makeApp, post, randomPassword, sessionCookie, signup, uniqueEmail } from '../helpers/app.js';
 import { CaptureMailer, tokenFromMail } from '../helpers/mailer.js';
@@ -188,8 +190,11 @@ describe('列挙防止: 登録の有無で応答を変えない', () => {
     const median = (xs: number[]) => [...xs].sort((x, y) => x - y)[Math.floor(xs.length / 2)]!;
     // 送信を待っていない: どの応答も送信時間（300ms）よりずっと短い
     expect(Math.max(...knownTimes)).toBeLessThan(150);
-    // 中央値の差が小さい（DB の 1 行の読み書き程度。CI の揺れを見込んで 20ms までを許す）
-    expect(Math.abs(median(knownTimes) - median(unknownTimes))).toBeLessThan(20);
+    // 中央値の差が小さい。登録済みの経路だけが送信回数の確認・トークンの発行（DB の読み書き数回）をするため、
+    // 実測で約 0.2ms（応答は 1ms 未満）の差がある。この差は許容している: IP ごとのレート制限（S8）があり、
+    // 外部から 0.2ms の差を読み取るのは現実的に難しいため。許容差 5ms は CI の揺れを見込んだ値で、
+    // 登録済みの経路だけに数 ms 以上の同期処理（送信を待つ、重い DB 処理を足す）が入る退行を見つけるためのもの
+    expect(Math.abs(median(knownTimes) - median(unknownTimes))).toBeLessThan(5);
   });
 
   it(`同じ利用者へのメールは 15 分に ${RESET_MAILS_PER_WINDOW} 通まで。超えても応答は同じ（S8）`, async () => {
@@ -205,6 +210,41 @@ describe('列挙防止: 登録の有無で応答を変えない', () => {
     await mailer.waitFor(RESET_MAILS_PER_WINDOW);
     await new Promise((r) => setTimeout(r, 50));
     expect(mailer.sent).toHaveLength(RESET_MAILS_PER_WINDOW);
+  });
+
+  it('差し替えた Mailer が同期で例外を投げても、プロセスは落ちず、ログには例外の種類だけが出る（S12）', async () => {
+    const stream = new PassThrough();
+    const chunks: string[] = [];
+    stream.on('data', (c: Buffer) => chunks.push(c.toString('utf8')));
+    // Promise を返す前に同期で投げる実装。例外の文に本文（トークン入りのリンク）を含めてしまう、悪い例を装う
+    let calls = 0;
+    const throwing: Mailer = {
+      send(_to, _subject, mailBody) {
+        calls += 1;
+        throw new TypeError(`送信できませんでした: ${mailBody}`);
+      },
+    };
+    const uncaught: unknown[] = [];
+    const onUncaught = (err: unknown) => uncaught.push(err);
+    process.on('uncaughtException', onUncaught);
+    try {
+      app = await makeApp({ mailer: throwing, logStream: stream });
+      app.log.level = 'error';
+      const { email } = await signup(app);
+      const res = await post(app, '/reset', { email });
+      expect(res.statusCode).toBe(200);
+      // 送信は応答の後（setImmediate）に回るので、ログが出るまで待つ
+      for (let i = 0; i < 50 && !chunks.join('').includes('errName'); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(calls).toBe(1);
+      expect(uncaught).toEqual([]);
+      const logs = chunks.join('');
+      expect(logs).toContain('"errName":"TypeError"');
+      expect(logs).not.toContain('/reset/new#token=');
+      // 落ちていなければ、次の要求にも応える
+      expect((await post(app, '/reset', { email: uniqueEmail() })).statusCode).toBe(200);
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
   });
 
   it('S8: IP ごとのレート制限が掛かる', async () => {
