@@ -35,7 +35,7 @@ npm run dev
 ```
 
 ターミナルのログ（JSON 形式）に `"msg":"Server listening at http://127.0.0.1:3000"` と出たら、ブラウザで **http://localhost:3000** を開きます
-（パスキーはドメイン名で動くので、`127.0.0.1` ではなく `localhost` で開いてください）。
+（設定の `ORIGIN` が `http://localhost:3000` なので、`127.0.0.1` で開くとパスワードの登録やログインも含めて送信がすべて拒否されます。パスキーもドメイン名が必要です）。
 
 1. 「新規登録」から、メールアドレスと 15 文字以上のパスワードで登録するか、「パスキーで登録」を押します
 2. アカウント設定画面で、パスキーの追加や名前変更、パスワードの変更を試せます
@@ -118,7 +118,7 @@ npm run dev
 ```
 
 When the (JSON) log in the terminal shows `"msg":"Server listening at http://127.0.0.1:3000"`, open **http://localhost:3000** in your browser
-(passkeys are bound to a domain name, so use `localhost` rather than `127.0.0.1`).
+(`ORIGIN` in the settings is `http://localhost:3000`, so opening `127.0.0.1` makes every submission fail, including password sign-up and login; passkeys also need a domain name).
 
 1. Go to "新規登録" (Sign up) and register with an email and a password of 15+ characters, or press "パスキーで登録" (Sign up with a passkey)
 2. In account settings, try adding or renaming passkeys and changing your password

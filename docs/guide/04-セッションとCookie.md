@@ -137,7 +137,8 @@ export async function verifyOrigin(request: FastifyRequest, reply: FastifyReply)
 |---|---|---|
 | ログアウト | この端末のセッションを DB から消し、Cookie も消す | `src/routes/logout.ts` |
 | すべての端末でログアウト | その利用者の全セッションを消す | `src/routes/logout.ts` |
-| パスワード変更・再設定 | 全セッションを消す（変更した端末には新しい ID を発行） | `src/routes/account.ts`, `src/routes/reset.ts` |
+| パスワード変更 | 全セッションを消し、変更した端末には新しい ID を発行する | `src/routes/account.ts` |
+| パスワード再設定 | 全セッションを消す。ログイン状態にはしない（S11） | `src/routes/reset.ts` |
 | 24 時間たった | 期限切れとして扱い、次の発行のついでに掃除する | `src/auth/session.ts` |
 
 Cookie を消すだけでは足りません。Cookie の値がどこかに控えられていたら、サーバー側に記録が残っている限り使えてしまうからです。

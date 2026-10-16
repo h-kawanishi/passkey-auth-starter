@@ -3,7 +3,7 @@ import type { Db } from '../connection.js';
 
 /**
  * S12: 監査ログを 1 件書く。detail にはパスワード・トークン・セッション ID の生値を入れない。
- * 何を入れてよいかを呼び出し側の注意だけに頼らないよう、型で「短い文字列・数値・真偽値」に絞っている。
+ * 型で文字列・数値・真偽値に絞り（オブジェクトや配列は入らない）、生値を入れないことは test/integration/audit.test.ts で確かめる。
  */
 export type AuditDetail = Record<string, string | number | boolean | null>;
 
