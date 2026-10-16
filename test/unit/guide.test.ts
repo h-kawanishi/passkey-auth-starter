@@ -101,7 +101,10 @@ function mismatch(fence: Fence): string | null {
 
 describe('docs/guide: 章立て（設計書 §8）', () => {
   it('00〜10 の 11 章がそろい、それ以外の章は無い', () => {
-    const files = readdirSync(GUIDE_DIR).filter((f) => /^\d{2}-/.test(f));
+    // macOS などはファイル名の濁点を分解した形（NFD）で返すことがあるので、比べる前にそろえる
+    const files = readdirSync(GUIDE_DIR)
+      .map((f) => f.normalize('NFC'))
+      .filter((f) => /^\d{2}-/.test(f));
     expect(files.sort()).toEqual([...CHAPTERS].sort());
   });
 });

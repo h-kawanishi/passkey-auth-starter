@@ -34,7 +34,7 @@ cp .env.example .env
 npm run dev
 ```
 
-ターミナルに `Server listening at http://127.0.0.1:3000` と出たら、ブラウザで **http://localhost:3000** を開きます
+ターミナルのログ（JSON 形式）に `"msg":"Server listening at http://127.0.0.1:3000"` と出たら、ブラウザで **http://localhost:3000** を開きます
 （パスキーはドメイン名で動くので、`127.0.0.1` ではなく `localhost` で開いてください）。
 
 1. 「新規登録」から、メールアドレスと 15 文字以上のパスワードで登録するか、「パスキーで登録」を押します
@@ -117,7 +117,7 @@ cp .env.example .env
 npm run dev
 ```
 
-When the terminal shows `Server listening at http://127.0.0.1:3000`, open **http://localhost:3000** in your browser
+When the (JSON) log in the terminal shows `"msg":"Server listening at http://127.0.0.1:3000"`, open **http://localhost:3000** in your browser
 (passkeys are bound to a domain name, so use `localhost` rather than `127.0.0.1`).
 
 1. Go to "新規登録" (Sign up) and register with an email and a password of 15+ characters, or press "パスキーで登録" (Sign up with a passkey)
