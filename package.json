@@ -1,0 +1,34 @@
+{
+  "name": "passkey-auth-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "パスワード認証を正しく実装し、パスキーを最初から選べるログイン機能の参照実装",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run migrate && tsx watch --env-file-if-exists=.env src/server.ts",
+    "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.12.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  }
+}

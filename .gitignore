@@ -8,3 +8,6 @@ playwright-report/
 .env
 .DS_Store
 Thumbs.db
+*.sqlite-wal
+*.sqlite-shm
+data/
