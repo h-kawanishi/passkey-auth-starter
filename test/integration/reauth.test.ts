@@ -8,12 +8,12 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/server';
 import { LOCKOUT_THRESHOLD } from '../../src/auth/lockout.js';
-import { REAUTH_MAX_AGE_MS } from '../../src/auth/session.js';
 import { loadConfig } from '../../src/config.js';
 import { openDatabase, type Db } from '../../src/db/connection.js';
 import { buildApp } from '../../src/server.js';
 import { CaptureMailer, tokenFromMail } from '../helpers/mailer.js';
 import { TestBrowser } from '../helpers/passkey-client.js';
+import { addPasskeyWith, countPasskeysOf, expireReauthOf } from '../helpers/reauth.js';
 import { SoftAuthenticator } from '../helpers/soft-authenticator.js';
 
 const config = loadConfig({ NODE_ENV: 'test', PORT: '3999', DATABASE_PATH: ':memory:' });
@@ -40,19 +40,8 @@ describe('パスキー追加の前の再認証（人間の判断 2）', () => {
     db.close();
   });
 
-  /** その人の全セッションの「最後に本人確認した時刻」を、5 分と 1 秒だけ過去にずらす（時間が経った状態を作る） */
-  function expireReauth(email: string): void {
-    db.prepare(
-      `UPDATE sessions SET reauthenticated_at = reauthenticated_at - ?
-       WHERE user_id = (SELECT id FROM users WHERE email = ?)`,
-    ).run(REAUTH_MAX_AGE_MS + 1000, email);
-  }
-
-  const countPasskeys = (email: string) =>
-    db
-      .prepare('SELECT count(*) FROM credentials WHERE user_id = (SELECT id FROM users WHERE email = ?)')
-      .pluck()
-      .get(email);
+  const expireReauth = (email: string) => expireReauthOf(db, email);
+  const countPasskeys = (email: string) => countPasskeysOf(db, email);
 
   const lastAudit = () =>
     db.prepare('SELECT event, detail FROM audit_log ORDER BY id DESC LIMIT 1').get() as {
@@ -60,13 +49,7 @@ describe('パスキー追加の前の再認証（人間の判断 2）', () => {
       detail: string;
     };
 
-  /** パスキーの追加を開始し、新しい認証器で応答を作って完了まで送る */
-  async function addPasskey(b: TestBrowser): Promise<{ start: LightMyRequestResponse; finish?: LightMyRequestResponse }> {
-    const start = await b.request('POST', '/passkeys/register/options', {});
-    if (start.statusCode !== 200) return { start };
-    const response = new SoftAuthenticator(config.origin).register(start.json<PublicKeyCredentialCreationOptionsJSON>());
-    return { start, finish: await b.request('POST', '/passkeys/register/verify', { response, deviceName: '追加' }) };
-  }
+  const addPasskey = (b: TestBrowser) => addPasskeyWith(b, config.origin);
 
   async function reauthWithPasskey(b: TestBrowser, auth: SoftAuthenticator): Promise<LightMyRequestResponse> {
     const opt = await b.request('POST', '/passkeys/reauth/options', {});
@@ -216,12 +199,34 @@ describe('パスキー追加の前の再認証（人間の判断 2）', () => {
     });
   });
 
-  it('S9: パスワードでの再認証の失敗はログインと同じ回数に数え、ロック中は正しいパスワードでも確認しない', async () => {
-    const { b, pw } = await passwordUser('lock@example.com');
-    for (let i = 0; i < LOCKOUT_THRESHOLD; i++) {
-      await b.request('POST', '/account/reauth', { password: password() });
-    }
-    expect((await b.request('POST', '/account/reauth', { password: pw })).statusCode).toBe(429);
+  describe('S9: パスワードでの再認証の失敗は、ログインと同じ回数に数える', () => {
+    // 再認証だけ別の鍵で数えると、盗んだセッションからの再認証とログインとで別々に上限まで試せてしまう
+    const auditEvents = () => db.prepare('SELECT event FROM audit_log ORDER BY id').pluck().all() as string[];
+
+    it('再認証での失敗が上限に達すると、別のブラウザから正しいパスワードでログインしても 429 になる', async () => {
+      const { b, pw } = await passwordUser('lock@example.com');
+      for (let i = 0; i < LOCKOUT_THRESHOLD; i++) {
+        expect((await b.request('POST', '/account/reauth', { password: password() })).statusCode).toBe(400);
+      }
+      expect(auditEvents()).toContain('account.locked');
+      expect((await b.request('POST', '/account/reauth', { password: pw })).statusCode).toBe(429);
+      const other = new TestBrowser(app, config.origin);
+      expect((await other.request('POST', '/login', { email: 'lock@example.com', password: pw })).statusCode).toBe(429);
+      expect(lastAudit().event).toBe('login.locked');
+    });
+
+    it('ログインでの失敗も再認証に効く（上限の 1 回手前から、再認証 1 回の失敗でロックが始まる）', async () => {
+      const { b, pw } = await passwordUser('lock2@example.com');
+      const other = new TestBrowser(app, config.origin);
+      for (let i = 0; i < LOCKOUT_THRESHOLD - 1; i++) {
+        const res = await other.request('POST', '/login', { email: 'lock2@example.com', password: password() });
+        expect(res.statusCode).toBe(401);
+      }
+      expect(auditEvents()).not.toContain('account.locked');
+      expect((await b.request('POST', '/account/reauth', { password: password() })).statusCode).toBe(400);
+      expect(lastAudit().event).toBe('account.locked');
+      expect((await b.request('POST', '/account/reauth', { password: pw })).statusCode).toBe(429);
+    });
   });
 
   it('パスワードの再設定が済むと、確認済みのセッションも含めて全端末がログアウトされる', async () => {
