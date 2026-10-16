@@ -1,5 +1,5 @@
 // S8 / S9: パスキーのログインにも、パスワードと同じアカウント単位のロックが掛かることを確かめる。
-// （B と C の統合で、C の TODO「S9 のロックを B と同じ仕組みで掛ける」を片付けた部分）
+// 経路ごとに別々に数えると、片方がロックされている間にもう片方で試し続けられるため、合わせて数えることを確かめる
 import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';

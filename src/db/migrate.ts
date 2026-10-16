@@ -6,7 +6,7 @@ import { openDatabase, type Db } from './connection.js';
 
 const MIGRATIONS_DIR = join(import.meta.dirname, 'migrations');
 
-// 001_init.sql のように「3 桁の番号_名前.sql」だけを対象にする。番号順に一度ずつ適用する
+// 001_init.sql のように「3 桁の番号_名前.sql」だけを対象にする。後の変更は前の表を前提にするので、番号順に一度ずつ適用する
 const FILE_PATTERN = /^(\d{3})_[a-z0-9_]+\.sql$/;
 
 export interface MigrationResult {

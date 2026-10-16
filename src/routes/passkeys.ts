@@ -62,7 +62,7 @@ export const passkeysRoutes: FastifyPluginCallback = (app, _opts, done) => {
       if (!isPlausibleEmail(email)) return reply.code(400).send({ message: 'メールアドレスの形が正しくありません' });
       // 登録済みのメールは新規登録できない。この応答で「登録済み」が分かってしまう点は
       // パスワードの新規登録（signup.ts）と同じ扱いで、速度はレート制限（S8）で抑える。
-      // 確認メールを挟んで列挙を防ぐかは未決（PR の「人間の判断が必要な点」）
+      // 確認メールを挟んで列挙を防ぐかは未決（threat-model.md §10）
       if (findUserByEmail(db, email)) return reply.code(409).send(EMAIL_TAKEN);
       const options = await createRegistrationOptions(config, { email, existing: [] });
       const entry = { kind: 'register', challenge: options.challenge, userId: null, email } as const;

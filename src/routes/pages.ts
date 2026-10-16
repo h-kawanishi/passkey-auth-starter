@@ -29,7 +29,7 @@ export const pageRoutes: FastifyPluginCallback = (app, _opts, done) => {
     '/': read('index.html'),
     '/login': read('login.html'),
     '/signup': read('signup.html'),
-    // パスワード忘れ（D）。/reset はメール入力、/reset/new はメールのリンクから開く新パスワードの入力
+    // パスワード忘れ（S10）。/reset はメール入力、/reset/new はメールのリンクから開く新パスワードの入力
     '/reset': read('reset.html'),
     '/reset/new': read('reset-new.html'),
   };

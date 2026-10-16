@@ -4,7 +4,7 @@ import type { Db } from '../connection.js';
 export interface UserRow {
   id: number;
   email: string;
-  /** S1: Argon2id の PHC 文字列。NULL は「パスキーのみ」のユーザー（C の範囲） */
+  /** S1: Argon2id の PHC 文字列（ソルトとパラメータを中に含むので、照合に別の列が要らない）。NULL は「パスキーのみ」のユーザー */
   password_hash: string | null;
   created_at: number;
   locked_until: number | null;

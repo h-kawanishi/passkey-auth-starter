@@ -20,7 +20,7 @@ export const AUDIT_EVENTS = [
   'logout.all',
   'password.change',
   'password.change.failure',
-  // パスキー（C）
+  // パスキー。登録・ログイン・管理の操作を、後から誰がいつ行ったか追えるように残す（S12）
   'passkey.register',
   'passkey.register.failure',
   'passkey.login.success',
@@ -28,7 +28,7 @@ export const AUDIT_EVENTS = [
   'passkey.login.locked',
   'passkey.rename',
   'passkey.delete',
-  // パスワード再設定（D, S10）。request は「登録済みのメールで受け付けた」ときだけ user_id が入る
+  // パスワード再設定（S10）。request は「登録済みのメールで受け付けた」ときだけ user_id が入る
   'password.reset.request',
   'password.reset.complete',
   'password.reset.failure',
