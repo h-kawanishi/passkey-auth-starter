@@ -24,4 +24,19 @@ export default tseslint.config(
     files: ['**/*.js'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // 画面の JavaScript はブラウザで動く。ブラウザの全体変数と、<script> で読む SimpleWebAuthn を知らせる
+    // （globals パッケージを足さずに済むよう、使うものだけを列挙する）
+    files: ['src/web/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        location: 'readonly',
+        fetch: 'readonly',
+        SimpleWebAuthnBrowser: 'readonly',
+      },
+    },
+  },
 );

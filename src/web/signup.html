@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>新規登録 - passkey-auth-starter</title>
+</head>
+<body data-page="signup">
+  <main>
+    <h1>新規登録</h1>
+    <!-- メールアドレスはパスワード再設定（回復）の連絡先。ログインの要素には使わない（S11） -->
+    <form id="signup-form">
+      <label>メールアドレス
+        <input id="email" name="email" type="email" autocomplete="username" required>
+      </label>
+      <button type="submit">パスキーで登録</button>
+    </form>
+    <!-- TODO(B): メール + パスワードでの登録フォーム（POST /signup） -->
+    <p id="message" role="status"></p>
+    <p><a href="/login">ログイン</a></p>
+  </main>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

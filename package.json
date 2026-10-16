@@ -17,6 +17,8 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.7"
   },

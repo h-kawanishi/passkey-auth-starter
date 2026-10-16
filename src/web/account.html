@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>アカウント設定 - passkey-auth-starter</title>
+</head>
+<body data-page="account">
+  <main>
+    <h1>アカウント設定</h1>
+    <p>ログイン中: <span id="account-email"></span></p>
+
+    <h2>パスキー</h2>
+    <ul id="passkey-list"></ul>
+    <form id="add-passkey">
+      <label>名前（例: 仕事用ノートPC）
+        <input id="device-name" name="deviceName" maxlength="64">
+      </label>
+      <button type="submit">パスキーを追加</button>
+    </form>
+
+    <!-- TODO(B): パスワードの変更、他端末からのログアウト -->
+    <p id="message" role="status"></p>
+    <p><button id="logout" type="button">ログアウト</button></p>
+  </main>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

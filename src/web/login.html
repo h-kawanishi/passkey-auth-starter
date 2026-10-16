@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ログイン - passkey-auth-starter</title>
+</head>
+<body data-page="login">
+  <main>
+    <h1>ログイン</h1>
+    <!-- 条件付き UI: autocomplete に webauthn を含めると、この欄の自動入力候補にパスキーが並ぶ（S5） -->
+    <label>メールアドレス
+      <input id="email" name="email" type="email" autocomplete="username webauthn">
+    </label>
+    <!-- TODO(B): パスワード欄と送信ボタン（POST /login） -->
+    <p><button id="passkey-login" type="button">パスキーでログイン</button></p>
+    <p id="message" role="status"></p>
+    <p><a href="/signup">新規登録</a></p>
+  </main>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
