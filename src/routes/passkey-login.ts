@@ -1,20 +1,17 @@
 // パスキーでのログイン（条件付き UI＝自動入力、または「パスキーでログイン」ボタン）。
 //
 // S8: IP ごとのレート制限は app.passkeyRateLimit（@fastify/rate-limit）で掛けている。
-// S8 / S9: アカウント単位の制限と連続失敗のロックは、パスワードのログインと同じ verifyWithLockout を使う。
-//   ロックはアカウント（メールアドレス）単位で、パスワードとパスキーの失敗を合わせて数える。
-//   経路ごとに別々に数えると、片方のロック中にもう片方で試し続けられてしまうため。
+// S9: パスキーのログインは、アカウント単位のロックの対象外にしている（人間の判断 3、threat-model.md §1）。
+//   ロックは「推測で当てる」総当たりの速度を落とすためのもの。パスキーの署名は秘密鍵が無ければ作れず、
+//   何回試しても当たる見込みが増えないので、ロックしても守りは強くならない。残る効果は、
+//   メールや credential ID を知る第三者が失敗を送り続けて本人を締め出す妨害だけになる。
+//   そのため失敗を login_attempts に数えず、パスワードの失敗でロック中のアカウントにもパスキーでは入れる。
+//   IP ごとのレート制限（S8）は、要求の洪水を抑えるために残している。
 // S13: Origin の検証は server.ts の onRequest フック（auth/origin.ts）が全ルートに掛けている。
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyPluginCallback } from 'fastify';
 import { audit } from '../auth/audit.js';
-import { LOCKED_MESSAGE, verifyWithLockout } from '../auth/lockout.js';
-import {
-  createAuthenticationOptions,
-  credentialIdFromResponse,
-  verifyAuthentication,
-  type Result,
-} from '../auth/passkey.js';
+import { createAuthenticationOptions, credentialIdFromResponse, verifyAuthentication } from '../auth/passkey.js';
 import { startSession } from '../auth/session.js';
 import { findCredentialByCredentialId, findUserById, updateCredentialAfterLogin } from '../db/repo.js';
 import { clearCeremonyCookie, issueCeremony, readCeremonyTicket } from './passkey-ceremony.js';
@@ -29,7 +26,7 @@ const LOGIN_FAILED = { message: 'パスキーでログインできませんで�
  * 'counter rollback' は署名が正しいと確かめた上でしか返らない（passkey.ts の verifyAuthentication）。
  * 秘密鍵を持たない第三者が他人の credential ID で送ってきた応答は 'bad signature' になる。
  */
-function failureKind(reason: string): string {
+export function failureKind(reason: string): string {
   if (reason === 'counter rollback') return 'counter_rollback'; // S6
   if (reason === 'bad signature') return 'bad_signature';
   if (/challenge/i.test(reason)) return 'bad_challenge';
@@ -72,29 +69,14 @@ export const passkeyLoginRoutes: FastifyPluginCallback = (app, _opts, done) => {
         return reply.code(401).send(LOGIN_FAILED);
       }
 
-      // S9: ロック中なら署名を検証しない。判定と記録を 1 つのトランザクションで先に済ませるので、
-      // 同時に送られた要求でも上限を超えて検証しない（lockout.ts の verifyWithLockout を参照）
-      // 検証の結果（新しいカウンタや失敗の種類）は下で使うので、照合の関数の外に持ち出す。
-      // as で型を広げておかないと、TypeScript が「初期値の ok: false のまま」と決めつけてしまう
-      let result = { ok: false, reason: 'not verified' } as Result<{ newCounter: number }>;
-      const guarded = await verifyWithLockout(
-        db,
-        { email: owner.email, userId: owner.id, ip: req.ip, now: Date.now() },
-        async () => {
-          result = await verifyAuthentication(config, req.body.response, pending.challenge, stored);
-          return result.ok;
-        },
-      );
-      if (guarded.status === 'locked') {
-        audit(req, 'passkey.login.locked', owner.id, { credential: stored.id });
-        return reply.code(429).send({ message: LOCKED_MESSAGE });
-      }
+      // S9: アカウント単位のロックは確かめず、失敗も数えない（冒頭のコメント）。
+      // 失敗は監査ログには残すので、同じ鍵を名乗る失敗が続けば運用者は気づける
+      const result = await verifyAuthentication(config, req.body.response, pending.challenge, stored);
       if (!result.ok) {
         audit(req, 'passkey.login.failure', owner.id, {
           credential: stored.id,
           kind: failureKind(result.reason),
         });
-        if (guarded.lockedNow) audit(req, 'account.locked', owner.id);
         return reply.code(401).send(LOGIN_FAILED);
       }
 

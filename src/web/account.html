@@ -20,6 +20,21 @@
         </label>
         <button type="submit">パスキーを追加</button>
       </form>
+
+      <!-- パスキーの追加の前に求める本人確認（5 分間有効）。サーバーが求めたときに開く -->
+      <div id="reauth-section" hidden>
+        <h3>本人確認</h3>
+        <p>パスキーを追加する前に、本人であることを確かめます。確認してから 5 分以内に「パスキーを追加」を押してください。</p>
+        <form id="reauth-password-form" hidden>
+          <p>
+            <label for="reauth-password">現在のパスワード</label><br>
+            <input id="reauth-password" name="password" type="password" autocomplete="current-password" required>
+          </p>
+          <p><button type="submit">パスワードで確認</button></p>
+        </form>
+        <p id="reauth-passkey-row" hidden><button type="button" id="reauth-passkey">登録済みのパスキーで確認</button></p>
+        <p id="reauth-message" aria-live="polite"></p>
+      </div>
     </section>
 
     <section id="password-section" hidden>

@@ -14,7 +14,7 @@ export const AUDIT_EVENTS = [
   'login.success',
   'login.failure',
   'login.locked',
-  // S9: この失敗でアカウントのロックが始まった（パスワード・パスキーのどちらの失敗でも）
+  // S9: この失敗でアカウントのロックが始まった（パスワードの照合の失敗だけが数えられる。パスキーは対象外）
   'account.locked',
   'logout',
   'logout.all',
@@ -25,9 +25,11 @@ export const AUDIT_EVENTS = [
   'passkey.register.failure',
   'passkey.login.success',
   'passkey.login.failure',
-  'passkey.login.locked',
   'passkey.rename',
   'passkey.delete',
+  // 再認証（パスキーの追加の前の本人確認）。detail.method で password / passkey を見分ける
+  'reauth',
+  'reauth.failure',
   // パスワード再設定（S10）。request は「登録済みのメールで受け付けた」ときだけ user_id が入る
   'password.reset.request',
   'password.reset.complete',

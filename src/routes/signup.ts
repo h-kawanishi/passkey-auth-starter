@@ -40,7 +40,8 @@ export const signupRoutes: FastifyPluginCallback = (app, _opts, done) => {
       const userId = createUser(app.db, { email, passwordHash, now: Date.now() });
       if (userId === null) {
         // 登録済みであることは、この画面では伝えざるを得ない（伝えないと本人が先へ進めない）。
-        // 列挙の速度はレート制限（S8）で抑える。確認メールを挟む方式にするかは未決（threat-model.md §10）。
+        // 列挙の速度は IP ごとのレート制限（S8）で抑える。確認メールを挟む方式は v1.0 の範囲外とし、
+        // 受け入れたリスクとしている（人間の判断 1、threat-model.md §6）。
         return reply.code(409).send({
           message:
             'このメールアドレスでは登録できません。登録済みの場合はログインするか、パスワードの再設定をお試しください',

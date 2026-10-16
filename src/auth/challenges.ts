@@ -19,9 +19,10 @@ const DEFAULT_MAX_PER_OWNER = 20;
 
 /** 登録のときに覚えておくこと。ログインのときは challenge だけ */
 export interface PendingCeremony {
-  kind: 'register' | 'login';
+  /** reauth は「ログイン中の人が既存のパスキーで本人確認する」（パスキー追加の前の再認証） */
+  kind: 'register' | 'login' | 'reauth';
   challenge: string;
-  /** 登録: 既存ユーザーへの追加なら user の id、新規登録なら null */
+  /** 登録: 既存ユーザーへの追加なら user の id、新規登録なら null。再認証: 確認を始めた user の id */
   userId?: number | null;
   /** 登録（新規）: 登録しようとしているメールアドレス */
   email?: string;

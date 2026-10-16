@@ -23,18 +23,26 @@
 
 | 対策 | 要件 | 場所 |
 |---|---|---|
-| IP ごとのレート制限（15 分あたり 30 回）。ログイン・登録・パスワード変更・再設定に掛ける | S8 | `src/server.ts:66-78`（`@fastify/rate-limit`）、各ルートの `config: { rateLimit: app.authRateLimit }`（`src/routes/login.ts:18`, `src/routes/account.ts:26`, `src/routes/reset.ts:80`, `:118`） |
+| IP ごとのレート制限（15 分あたり 30 回）。ログイン・登録・パスワード変更・再認証・再設定に掛ける | S8 | `src/server.ts:67-79`（`@fastify/rate-limit`）、各ルートの `config: { rateLimit: app.authRateLimit }`（`src/routes/login.ts:18`, `src/routes/account.ts:26`, `src/routes/reauth.ts:41`, `src/routes/reset.ts:80`, `:118`） |
 | アカウント単位のロック: 5 回続けて失敗すると 15 分止める。ロック中は正しいパスワードでも照合しない | S8, S9 | `src/auth/lockout.ts:11-13`（回数と時間）、`:74`（`verifyWithLockout`） |
 | 判定と記録を 1 つのトランザクションで先に行う（同時に大量に送っても、上限を超えて照合しない） | S9 | `src/auth/lockout.ts:86`（`reserveAttempt`）、`:98`（`markSucceeded`） |
-| パスワードとパスキーの失敗を同じ回数で数える（経路を変えて試し続けられない） | S9 | `src/routes/login.ts:40`、`src/routes/passkey-login.ts:80` |
-| 「現在のパスワード」の照合（パスワード変更）も同じ回数に数える（盗んだセッションからの総当たりを防ぐ） | S9 | `src/routes/account.ts:51` |
+| パスワードを照合する経路はすべて同じ回数で数える: ログイン、パスワード変更の「現在のパスワード」、パスキー追加の前の再認証（盗んだセッションからの総当たりを防ぐ） | S9 | `src/routes/login.ts:40`、`src/routes/account.ts:51`、`src/routes/reauth.ts:60` |
+| パスキーのログイン・再認証はロックの対象外（失敗を数えず、ロック中でも検証する）。IP ごとの制限（1 分あたり 30 回）は掛ける | S8, S9 | `src/routes/passkey-login.ts:1-10`（理由）、`:74`、`src/routes/reauth.ts:118-119` |
 | 15 文字以上を求める（推測に必要な回数を大きくする） | S2 | `src/auth/password.ts:9`, `:60-64` |
 
-テスト: `test/integration/security.test.ts`（S8 / S9、同時要求）、`test/integration/passkey-lockout.test.ts`、`test/unit/lockout.test.ts`
+テスト: `test/integration/security.test.ts`（S8 / S9、同時要求）、`test/integration/passkey-lockout.test.ts`（パスキーはロックされず、パスワードはロックされる）、`test/integration/reauth.test.ts`（再認証の失敗も数える）、`test/unit/lockout.test.ts`
 
-**残るリスク**: ロックはメールアドレスを知っている第三者でも起こせる（利用者を 15 分ずつ締め出す妨害）。
-パスキーのログインも同じロックで止まる（§10 の「判断が必要な点」）。多数の IP を使う分散型の総当たりは、
-IP の制限では止まらず、アカウント単位のロック（1 時間に 20 回程度まで）で速度を落とすだけになる。
+**パスキーをロックの対象外にした理由（人間の判断 3）**: ロックは「推測で当てる」総当たりの速度を落とすための仕組みである。
+パスキーの署名は利用者の端末にある秘密鍵が無ければ作れず、何回試しても当たる見込みは増えない。
+そのためロックを掛けても守りは強くならず、残る効果は、メールアドレスや credential ID を知る第三者が
+失敗を送り続けて本人を締め出す妨害だけになる。パスキーの失敗は `login_attempts` に数えず、
+パスワードの失敗でロック中のアカウントにもパスキーでは入れる（ロックされた利用者の逃げ道にもなる）。
+失敗は監査ログ（`passkey.login.failure`）には残すので、同じ鍵を名乗る失敗が続けば運用者は気づける。
+要求の洪水は IP ごとのレート制限（S8）で抑える。
+
+**残るリスク**: パスワードのロックはメールアドレスを知っている第三者でも起こせる（利用者を 15 分ずつ締め出す妨害）。
+パスキーを登録している利用者はパスキーで入れるので、締め出しの害はパスワードだけの利用者に限られる。
+多数の IP を使う分散型の総当たりは、IP の制限では止まらず、アカウント単位のロック（1 時間に 20 回程度まで）で速度を落とすだけになる。
 
 ## 2. 資格情報の使い回し（クレデンシャルスタッフィング）
 
@@ -58,9 +66,9 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 | 対策 | 要件 | 場所 |
 |---|---|---|
 | パスキーの RP ID をドメインに固定する。認証器は別ドメインの偽サイトでは署名しない | S5 | `src/auth/passkey.ts:38`, `:104` |
-| 応答に記録されたオリジン（どのサイトで署名したか）を検証する。偽サイト経由の応答は通らない | S5 | `src/auth/passkey.ts:76`, `:127`（`expectedOrigin`） |
+| 応答に記録されたオリジン（どのサイトで署名したか）を検証する。偽サイト経由の応答は通らない | S5 | `src/auth/passkey.ts:76`, `:145`（`expectedOrigin`） |
 | チャレンジは使い切り・5 分。盗み見た応答を後から使い回せない | S5 | `src/auth/challenges.ts:11`, `:77`（`take`） |
-| メールや SMS のコードをログインの要素にしない（コードは偽サイトに中継できる） | S11 | `src/mail/mailer.ts`（コメント）、`src/routes/reset.ts:162`（再設定後もログイン状態にしない） |
+| メールや SMS のコードをログインの要素にしない（コードは偽サイトに中継できる）。パスキー追加の前の再認証にもメールは使わない | S11 | `src/mail/mailer.ts`（コメント）、`src/routes/reset.ts:163`（再設定後もログイン状態にしない）、`src/routes/reauth.ts` |
 
 テスト: `test/unit/passkey.test.ts`（偽オリジンの拒否）、`test/integration/audit.test.ts`（偽サイトで作った登録応答が `passkey.register.failure` になる）
 
@@ -73,25 +81,24 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 
 | 攻撃の形 | 対策 | 要件 | 場所 |
 |---|---|---|---|
-| 推測 | セッション ID は 256bit の乱数 | S7 | `src/auth/session.ts:51` |
-| XSS で Cookie を読む | HttpOnly（JavaScript から読めない）。利用者が付けた名前は `textContent` で表示 | S7 | `src/auth/session.ts:68`、`src/web/app.js:134` |
-| 通信の盗聴 | 本番は Secure（https でしか送らない）と `__Host-` 接頭辞 | S7 | `src/auth/session.ts:25`, `:72` |
-| DB の漏えい | DB には ID の HMAC-SHA256 だけを保存（鍵は `SESSION_SECRET`） | S7 | `src/auth/session.ts:33` |
-| セッション固定（事前に仕込んだ ID でログインさせる） | ログインのたびに新しい ID を発行し、古い ID は消す | S7 | `src/auth/session.ts:51-55` |
-| 盗まれた Cookie を使い続けられる | 有効期間 24 時間。パスワード変更・再設定・全端末ログアウトで全セッションを消す。**ただしセッションは消えるが、盗んだセッションの間に攻撃者が追加したパスキーは残る**（下の「残るリスク」） | S7 | `src/auth/session.ts:17`、`src/routes/account.ts:78`、`src/routes/reset.ts:154`、`src/routes/logout.ts:19` |
-| CSRF（他サイトから要求を送らせる） | SameSite=Lax と、状態を変える要求の Origin 検証（全ルートに 1 か所で掛ける） | S13 | `src/auth/session.ts:70`、`src/auth/origin.ts:15-16`、`src/server.ts:80` |
-| ログから Cookie を拾う | ログの Cookie / Set-Cookie ヘッダを伏せる | S12 | `src/server.ts:47` |
+| 推測 | セッション ID は 256bit の乱数 | S7 | `src/auth/session.ts:59` |
+| XSS で Cookie を読む | HttpOnly（JavaScript から読めない）。利用者が付けた名前は `textContent` で表示 | S7 | `src/auth/session.ts:78`、`src/web/app.js`（`renderPasskeys`） |
+| 通信の盗聴 | 本番は Secure（https でしか送らない）と `__Host-` 接頭辞 | S7 | `src/auth/session.ts:33`, `:82` |
+| DB の漏えい | DB には ID の HMAC-SHA256 だけを保存（鍵は `SESSION_SECRET`） | S7 | `src/auth/session.ts:41` |
+| セッション固定（事前に仕込んだ ID でログインさせる） | ログインのたびに新しい ID を発行し、古い ID は消す | S7 | `src/auth/session.ts:59-63` |
+| 盗まれた Cookie を使い続けられる | 有効期間 24 時間。パスワード変更・再設定・全端末ログアウトで全セッションを消す | S7 | `src/auth/session.ts:18`、`src/routes/account.ts:78`、`src/routes/reset.ts:155`、`src/routes/logout.ts:19` |
+| 盗んだ Cookie で攻撃者の認証器をパスキーとして足す（セッションを消されても入り直せるようにする） | パスキーの追加は、開始と完了の両方で「このセッションで直近 5 分以内に本人確認したか」を確かめる。本人確認はログイン、またはパスワード・既存のパスキーでの再認証。確認の時刻はセッションの行（`sessions.reauthenticated_at`）にだけ記録し、他の端末や他人のセッションには付かない。再認証は監査ログ `reauth` に残す（人間の判断 2） | — | `src/auth/session.ts:25`（5 分）, `:115`, `:123`、`src/routes/passkeys.ts:60`, `:111`、`src/routes/reauth.ts`、`src/db/migrations/002_session_reauth.sql` |
+| CSRF（他サイトから要求を送らせる） | SameSite=Lax と、状態を変える要求の Origin 検証（全ルートに 1 か所で掛ける） | S13 | `src/auth/session.ts:80`、`src/auth/origin.ts:15-16`、`src/server.ts:81` |
+| ログから Cookie を拾う | ログの Cookie / Set-Cookie ヘッダを伏せる | S12 | `src/server.ts:48` |
 
-テスト: `test/integration/security.test.ts`（S7 / S13）、`test/integration/password-auth.test.ts`（ID の作り直し）、`test/integration/passkey-hardening.test.ts`（本番の Cookie 属性）
+テスト: `test/integration/security.test.ts`（S7 / S13）、`test/integration/password-auth.test.ts`（ID の作り直し）、`test/integration/passkey-hardening.test.ts`（本番の Cookie 属性）、`test/integration/reauth.test.ts`（再認証なし・5 分超の拒否、他人のセッションでの再認証の拒否）、`test/e2e/passkey.spec.ts`（画面からの再認証）
 
 **残るリスク**: 有効期間中に端末そのものを奪われた場合は防げない（「すべての端末でログアウト」で利用者が切れる）。
 
-**残るリスク（未対応・§10 で判断待ち）**: 既存アカウントへのパスキーの追加（`POST /passkeys/register/options` と `/passkeys/register/verify`、
-`src/routes/passkeys.ts:43`）は、ログイン中であること（セッション Cookie）しか確かめず、再認証を求めない。
-そのため、Cookie を盗んだ攻撃者は自分の認証器をパスキーとして登録できる。
-利用者がパスワード変更・再設定・全端末ログアウトをしても、消えるのはセッションだけで、
-パスキー（`credentials` 表）は残る（`src/routes/reset.ts:145-155`）。攻撃者はそのパスキーで入り直せる。
-利用者は、アカウント設定のパスキー一覧で見覚えのないものを削除すれば締め出せるが、気づけなければ残り続ける。
+**残るリスク**: ログイン（または再認証）の直後 5 分以内の Cookie を盗まれた場合は、その間にパスキーを足せる。
+ログインそのものを本人確認として数えているためで、利便性との引き換えである。足されたパスキーはパスワード変更・再設定・
+全端末ログアウトの後も残る（`src/routes/reset.ts:145-156` はセッションだけを消す）。利用者はアカウント設定の
+パスキー一覧で見覚えのないものを削除すれば締め出せるが、気づけなければ残り続ける。追加の監査ログ（`passkey.register`）で運用者は追える。
 
 ## 5. 再設定トークンの再利用・横取り
 
@@ -104,15 +111,16 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 | 古いリンクが受信箱に残る | 15 分で無効。新しいリンクを送ると古いものは無効。パスワードを変えたら未使用のリンクも無効 | S10 | `src/auth/reset.ts:15`（期間）, `:46`、`src/routes/account.ts:74` |
 | DB の漏えい | DB にはトークンの SHA-256 だけを保存 | S10 | `src/auth/reset.ts:26` |
 | ログ・Referer への漏れ | トークンは URL の `#` の後ろに置く（ブラウザはサーバーへ送らない）。画面は読み取った後に URL から消し、`no-referrer` を指定。メール送信の失敗ログには例外の種類だけを書く | S10, S12 | `src/auth/reset.ts:68`、`src/web/app.js`（`initResetNew`）、`src/web/reset-new.html:7`、`src/routes/reset.ts:63-73` |
-| 開発用の出力が本番に残る | コンソールへ書く Mailer は本番では作れない。本番で Mailer を渡さないと起動しない | S10 | `src/mail/console-mailer.ts:17`、`src/server.ts:27` |
-| 再設定をログインの抜け道にする | 再設定が済んでもログイン状態にしない（メールは回復の手段で、認証の手段ではない） | S11 | `src/routes/reset.ts:162` |
+| 開発用の出力が本番に残る | コンソールへ書く Mailer は本番では作れない。本番で Mailer を渡さないと起動しない | S10 | `src/mail/console-mailer.ts:17`、`src/server.ts:28` |
+| 再設定の前から入っていた第三者が残る | 再設定が済んだら、本人確認済みのものも含めて全端末のセッションを消す | S10 | `src/routes/reset.ts:155` |
+| 再設定をログインの抜け道にする | 再設定が済んでもログイン状態にしない（メールは回復の手段で、認証の手段ではない） | S11 | `src/routes/reset.ts:163` |
 
-テスト: `test/unit/reset.test.ts`（使い切り・15 分・ハッシュのみ）、`test/integration/reset.test.ts`（同時の二重使用、パスワード変更での無効化、全端末ログアウト）、`test/e2e/reset.spec.ts`（URL からの消去）
+テスト: `test/unit/reset.test.ts`（使い切り・15 分・ハッシュのみ）、`test/integration/reset.test.ts`（同時の二重使用、パスワード変更での無効化、全端末ログアウト）、`test/integration/reauth.test.ts`（本人確認済みのセッションも再設定で消える）、`test/e2e/reset.spec.ts`（URL からの消去）
 
 **残るリスク**: 利用者のメール受信箱が乗っ取られていれば、再設定でアカウントを取られる。
 これはメールを回復に使う以上避けられない（設計書 S11）。パスキーのみのユーザーも、メールでパスワードを足せる（§7-5 の回復手段）。
 また、再設定は乗っ取りからの回復を完全には保証しない。乗っ取られている間に追加されたパスキーは再設定の後も残り、
-攻撃者はそれで入り直せる（§4 の「残るリスク」。対策は §10 で判断待ち）。
+攻撃者はそれで入り直せる。パスキーの追加に直近 5 分以内の本人確認を求めることで、盗んだ Cookie だけでは足せないようにした（§4）。
 
 ## 6. 列挙（登録済みのメールアドレスを探る）
 
@@ -123,13 +131,16 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 | ログイン | 「存在しないメール」と「パスワード違い」で状態コード・本文・Cookie を同じにする。未登録でもダミーのハッシュと照合して時間をそろえる | `src/routes/login.ts:10`, `:46`、`src/auth/password.ts:106` |
 | ロック | 未登録のメールにも同じ規則でロックを掛ける（ロックの有無で分からないように） | `src/auth/lockout.ts`（メールアドレス単位で数える） |
 | パスワード再設定 | 登録の有無・送信上限の到達にかかわらず同じ応答。メール送信は応答の後に回し、時間でも分からないようにする | `src/routes/reset.ts:32`, `:63`, `:96-111` |
-| パスキーのログイン | 開始時に「このメールの鍵」を返さない（Discoverable Credential）。失敗の応答はどの段階でも同じ | `src/auth/passkey.ts:106`、`src/routes/passkey-login.ts:24` |
+| パスキーのログイン | 開始時に「このメールの鍵」を返さない（Discoverable Credential）。失敗の応答はどの段階でも同じ | `src/auth/passkey.ts:106`、`src/routes/passkey-login.ts:21` |
 
 テスト: `test/integration/security.test.ts`（ログイン・ロック）、`test/integration/reset.test.ts`（再設定の応答と所要時間）
 
-**残るリスク**: 新規登録（パスワード・パスキーとも）は、登録済みのメールに 409 を返すので列挙できる
-（`src/routes/signup.ts:44`、`src/routes/passkeys.ts:66`）。速度はレート制限で抑えている。
-完全に防ぐには、確認メールを挟む登録フローが要る（§10）。
+**受け入れたリスク（人間の判断 1）**: 新規登録（パスワード・パスキーとも）は、登録済みのメールに 409 を返すので列挙できる
+（`src/routes/signup.ts:45`、`src/routes/passkeys.ts:78`）。v1.0 ではこの挙動を変えない。
+完全に防ぐには、確認メールを挟む登録フロー（登録の有無にかかわらず「メールを送りました」と返し、続きはメールのリンクで行う）が要るが、
+v1.0 の範囲外とした。登録の画面で「登録済み」を伝えないと、本人が先へ進めない（ログインや再設定へ案内できない）ためでもある。
+列挙の速度は IP ごとのレート制限（パスワードは 15 分あたり 30 回、パスキーは 1 分あたり 30 回、S8）で抑える。
+多数の IP を使えば制限をまたげるので、メールアドレスの一覧が攻撃者にとって価値の高いサービスでは、確認メール方式に変えること。
 
 ## 7. DB の漏えい（オフラインでの解析）
 
@@ -148,8 +159,9 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 
 | 攻撃 | 対策 | 要件 | 場所 |
 |---|---|---|---|
-| 鍵を複製した認証器 | 署名カウンタの巻き戻りを拒否し、監査ログに `counter_rollback` を残す（署名が本物のときだけ） | S6 | `src/auth/passkey.ts:114`, `:160`、`src/db/repo/credentials.ts:98` |
-| 他人の credential ID を名乗る | 名乗った ID の持ち主の公開鍵で署名を検証する | S5 | `src/routes/passkey-login.ts:80-99` |
+| 鍵を複製した認証器 | 署名カウンタの巻き戻りを拒否し、監査ログに `counter_rollback` を残す（署名が本物のときだけ） | S6 | `src/auth/passkey.ts:132`, `:178`、`src/db/repo/credentials.ts:98` |
+| 他人の credential ID を名乗る | 名乗った ID の持ち主の公開鍵で署名を検証する | S5 | `src/routes/passkey-login.ts:62-81` |
+| 再認証で他人のパスキーを使う（自分のセッションを「確認済み」にする） | 再認証の開始では本人の鍵だけを並べ、完了では鍵の持ち主が今のセッションの利用者かを確かめる | — | `src/auth/passkey.ts:114`（`createReauthenticationOptions`）、`src/routes/reauth.ts:112-116` |
 | 他人のパスキーの変更・削除（IDOR） | SQL の WHERE に必ず user_id を入れる | — | `src/db/repo/credentials.ts:108`, `:114` |
 | チャレンジ置き場を埋める妨害 | 満杯なら新しい要求を断る（他人のものは押し出さない）。IP ごとの上限 | S8 | `src/auth/challenges.ts`、`src/routes/passkey-ceremony.ts` |
 
@@ -164,14 +176,20 @@ IP の制限では止まらず、アカウント単位のロック（1 時間に
 - **残るリスク**: リバースプロキシの後ろに置くと、`trustProxy` を設定しない限り、監査ログ・レート制限・ロックの IP がプロキシの IP になる。
   レート制限のカウンタとチャレンジ置き場はプロセスのメモリにあるので、複数台・複数プロセスでは共有の置き場（Redis など）に移す必要がある。
 
-## 10. 判断が必要な点（未決）
+## 10. 決定済みの判断（2026-10-16、リポジトリ所有者）
 
-- 盗んだセッションで追加されたパスキーが、パスワード変更・再設定の後も残る（§4, §5）。対策の案は 2 つ。
-  (a) 既存アカウントへのパスキー追加の前に再認証を求める（現在のパスワード、既存のパスキー、または直近数分以内のログイン）。
-  パスワード変更が現在のパスワードを求めるのと同じ扱いにする。
-  (b) 再設定が済んだら登録済みのパスキーの一覧をメールで知らせ、次のログインでアカウント設定の確認を促す。
+| # | 論点 | 決定 | 反映した場所 |
+|---|---|---|---|
+| 1 | 新規登録で登録済みのメールに 409 を返す（§6 の列挙） | v1.0 では許容する。IP ごとのレート制限で速度を抑え、「受け入れたリスク」として明記する | §6、`src/routes/signup.ts:42-45`、`src/routes/passkeys.ts:75-78`（コメント） |
+| 2 | 盗んだセッションで追加されたパスキーが、パスワード変更・再設定の後も残る（§4, §5） | パスキーの追加に、直近 5 分以内の再認証（パスワード、または既存のパスキー）を必須にする。ログイン直後はログインを本人確認として数える | §4、`src/routes/reauth.ts`、`src/routes/passkeys.ts`、`src/db/migrations/002_session_reauth.sql`、`src/web/account.html` |
+| 3 | パスキーのログインにもアカウント単位のロックを掛けていた（§1） | パスキーのログインはロック（S9）の対象外にする。総当たりが成り立たず、ロックは第三者による締め出しにしか効かないため。IP ごとのレート制限（S8）は残す | §1、`src/routes/passkey-login.ts` |
 
-- 新規登録での列挙（§6）。確認メールを挟む登録フローにするか。
-- パスキーのログインにもアカウント単位のロックを掛けている（§1）。パスキーは推測できないので、ロックによる妨害（締め出し）のほうが害が大きいという考え方もある。
+### 受け入れたリスク
+
+- 新規登録での列挙（判断 1、§6）。
+- ログイン・再認証の直後 5 分以内の Cookie を盗まれた場合のパスキーの追加（判断 2 の利便性との引き換え、§4）。
+
+## 11. 判断が必要な点（未決）
+
 - `login_attempts` と `audit_log` の保存期間。今は消さずに増え続ける。
 - 監査ログを改ざんから守る仕組み（追記専用の外部保存など）は v1.0 の範囲外。

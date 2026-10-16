@@ -149,8 +149,9 @@ export const resetRoutes: FastifyPluginCallback = (app, _opts, done) => {
         // 同じ人に送った他のリンクも使えなくする。受信箱に残った古いリンクで、決めたばかりのパスワードを上書きされないように
         invalidateResetTokensOfUser(app.db, userId, now);
         // パスワードを知った第三者がすでに入っていたかもしれないので、全端末をログアウトさせる。
-        // ただしパスキー（credentials）には触れない。乗っ取られている間に追加されたパスキーは残るので、
-        // 再設定だけでは攻撃者を締め出せない場合がある（threat-model.md §4 の「残るリスク」、対策は §10 で判断待ち）
+        // ただしパスキー（credentials）には触れない。パスキーの追加には直近 5 分以内の本人確認を求めているので
+        // （人間の判断 2）、盗んだ Cookie だけで攻撃者がパスキーを足すことはしにくい。それでも本人確認の直後の
+        // Cookie を盗まれた場合などに足されたパスキーは残る（threat-model.md §4 の「残るリスク」）
         const sessionsEnded = deleteSessionsOfUser(app.db, userId);
         return { userId, sessionsEnded };
       })();

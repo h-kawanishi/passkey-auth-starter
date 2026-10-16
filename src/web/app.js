@@ -18,7 +18,12 @@ async function api(method, url, body) {
     credentials: 'same-origin',
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || '通信に失敗しました。');
+  if (!res.ok) {
+    const err = new Error(data.message || '通信に失敗しました。');
+    // 画面が次の操作を選べるよう、サーバーが付けた理由（例: reauth_required）を残す
+    err.reason = data.reason;
+    throw err;
+  }
   return data;
 }
 
@@ -117,8 +122,12 @@ function formatDate(ms) {
   return ms == null ? '—' : new Date(ms).toLocaleString('ja-JP');
 }
 
+// 本人確認の欄で使う。パスワードを持たない人には、パスワードの入力欄を出さない
+let accountHasPassword = false;
+
 async function renderPasskeys() {
   const data = await api('GET', '/passkeys');
+  accountHasPassword = data.hasPassword;
   document.getElementById('account-email').textContent = data.email;
   // パスキーのみのユーザーには「現在のパスワード」が無いので、変更フォームの代わりに案内を出す
   document.getElementById('password-section').hidden = !data.hasPassword;
@@ -168,8 +177,54 @@ async function onDelete(pk) {
   }
 }
 
+// ---- 本人確認（パスキーの追加の前。サーバーが reauth_required を返したときに開く）
+
+function showReauthMessage(text, isError = false) {
+  const box = document.getElementById('reauth-message');
+  box.textContent = text;
+  box.setAttribute('role', isError ? 'alert' : 'status');
+}
+
+function openReauth() {
+  document.getElementById('reauth-section').hidden = false;
+  document.getElementById('reauth-password-form').hidden = !accountHasPassword;
+  // パスキーのみの人は必ずパスキーを持っている（最後の 1 本は消せない）。パスワードの人も、持っていれば使える
+  document.getElementById('reauth-passkey-row').hidden = document.querySelectorAll('#passkey-list li').length === 0;
+  showReauthMessage('');
+}
+
+/** 確認できたら欄を閉じ、もう一度「パスキーを追加」を押してもらう（認証器の操作は利用者の操作から始める） */
+function reauthDone(data) {
+  document.getElementById('reauth-section').hidden = true;
+  showMessage(data.message);
+}
+
+function initReauth() {
+  const form = document.getElementById('reauth-password-form');
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    try {
+      const data = await api('POST', '/account/reauth', { password: document.getElementById('reauth-password').value });
+      form.reset();
+      reauthDone(data);
+    } catch (err) {
+      showReauthMessage(err.message, true);
+    }
+  });
+  document.getElementById('reauth-passkey').addEventListener('click', async () => {
+    try {
+      const optionsJSON = await api('POST', '/passkeys/reauth/options', {});
+      const response = await startAuthentication({ optionsJSON });
+      reauthDone(await api('POST', '/passkeys/reauth/verify', { response }));
+    } catch (err) {
+      showReauthMessage(isCancel(err) ? '確認を取り消しました。' : err.message, !isCancel(err));
+    }
+  });
+}
+
 function initAccount() {
   renderPasskeys().catch(() => location.assign('/login'));
+  initReauth();
 
   document.getElementById('add-passkey').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -182,6 +237,7 @@ function initAccount() {
       showMessage('パスキーを追加しました。');
       await renderPasskeys();
     } catch (err) {
+      if (err.reason === 'reauth_required') openReauth();
       showMessage(isCancel(err) ? '追加を取り消しました。' : err.message, !isCancel(err));
     }
   });
