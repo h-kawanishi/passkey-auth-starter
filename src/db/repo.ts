@@ -121,13 +121,20 @@ export function deleteExpiredSessions(db: Db, now: number): void {
 export function insertLoginAttempt(
   db: Db,
   a: { userId: number | null; email: string; succeeded: boolean; at: number; ip: string | null },
-): void {
-  db.prepare(
-    'INSERT INTO login_attempts (user_id, email, succeeded, at, ip) VALUES (?, ?, ?, ?, ?)',
-  ).run(a.userId, a.email, a.succeeded ? 1 : 0, a.at, a.ip);
+): number {
+  const result = db
+    .prepare('INSERT INTO login_attempts (user_id, email, succeeded, at, ip) VALUES (?, ?, ?, ?, ?)')
+    .run(a.userId, a.email, a.succeeded ? 1 : 0, a.at, a.ip);
+  return Number(result.lastInsertRowid);
+}
+
+/** S9: 照合の前に「失敗」として予約した行を、照合の結果で書き換える */
+export function setLoginAttemptSucceeded(db: Db, id: number, succeeded: boolean): void {
+  db.prepare('UPDATE login_attempts SET succeeded = ? WHERE id = ?').run(succeeded ? 1 : 0, id);
 }
 
 export interface LoginAttemptRow {
+  id: number;
   succeeded: 0 | 1;
   at: number;
 }
@@ -135,7 +142,7 @@ export interface LoginAttemptRow {
 /** since 以降の試行を古い順に返す */
 export function listLoginAttempts(db: Db, email: string, since: number): LoginAttemptRow[] {
   return db
-    .prepare('SELECT succeeded, at FROM login_attempts WHERE email = ? AND at >= ? ORDER BY at, id')
+    .prepare('SELECT id, succeeded, at FROM login_attempts WHERE email = ? AND at >= ? ORDER BY at, id')
     .all(email, since) as LoginAttemptRow[];
 }
 

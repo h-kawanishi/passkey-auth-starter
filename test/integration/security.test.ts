@@ -154,6 +154,47 @@ describe('S8/S9: 連続失敗でのロック', () => {
     expect(fake.statusCode).toBe(real.statusCode);
     expect(fake.body).toBe(real.body);
   });
+
+  // 判定と記録の間に照合の await があると、同時に届いた要求がすべて判定を通り抜けてしまう。
+  // 1 件ずつ await して送るテストではこの経路を検査できないので、Promise.all でまとめて送る
+  it('同時に送られた要求でも、照合するのは上限の回数までで、正しいパスワードでも入れない', async () => {
+    const a = (app = await makeApp());
+    const { email, password } = await signup(a);
+    const wrong = Array.from({ length: LOCKOUT_THRESHOLD + 15 }, () =>
+      post(a, '/login', { email, password: randomPassword() }),
+    );
+    // 正しいパスワードは束の最後に置く。上限までの失敗が先に数えられた後に届く形
+    const results = await Promise.all([...wrong, post(a, '/login', { email, password })]);
+    const correct = results.at(-1)!;
+
+    expect(correct.statusCode).not.toBe(200);
+    expect(correct.cookies.find((c) => c.name === 'sid')).toBeUndefined();
+    const verified = results.filter((r) => r.statusCode !== 429).length;
+    expect(verified).toBeLessThanOrEqual(LOCKOUT_THRESHOLD);
+    const attempts = a.db
+      .prepare('SELECT COUNT(*) FROM login_attempts WHERE email = ?')
+      .pluck()
+      .get(email);
+    expect(attempts).toBeLessThanOrEqual(LOCKOUT_THRESHOLD);
+  });
+
+  it('/account/password の現在パスワード照合も、同時に送られた要求を上限の回数までしか照合しない', async () => {
+    const a = (app = await makeApp());
+    const { cookie } = await signup(a);
+    const results = await Promise.all(
+      Array.from({ length: LOCKOUT_THRESHOLD + 7 }, () =>
+        post(
+          a,
+          '/account/password',
+          { currentPassword: randomPassword(), newPassword: randomPassword() },
+          { cookie },
+        ),
+      ),
+    );
+    const codes = results.map((r) => r.statusCode);
+    expect(codes.filter((c) => c === 400).length).toBeLessThanOrEqual(LOCKOUT_THRESHOLD);
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(7);
+  });
 });
 
 describe('S13: Origin ヘッダ検証', () => {

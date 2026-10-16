@@ -1,13 +1,13 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { audit } from '../auth/audit.js';
-import { LOCKED_MESSAGE, lockedUntil, recordLoginAttempt } from '../auth/lockout.js';
+import { LOCKED_MESSAGE, verifyWithLockout } from '../auth/lockout.js';
 import {
   checkNewPassword,
   hashPassword,
   passwordProblemMessage,
   verifyPassword,
 } from '../auth/password.js';
-import { currentUser, endAllSessions, requireUser } from '../auth/session.js';
+import { currentUser, endAllSessions, requireUser, startSession } from '../auth/session.js';
 import { findUserById, updatePasswordHash } from '../db/repo.js';
 import { htmlPage } from '../web/pages.js';
 
@@ -52,19 +52,19 @@ export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
         return reply.code(400).send({ message: 'このアカウントにはパスワードが設定されていません' });
       }
 
-      const now = Date.now();
-      // S9: 現在のパスワードの照合もログインと同じ失敗回数に数える。ここが総当たりの抜け道にならないように
-      if (lockedUntil(app.db, row.email, now) !== null) {
+      // S9: 現在のパスワードの照合もログインと同じ失敗回数に数える。ここが総当たりの抜け道にならないように。
+      // 同時に送られた要求でも上限を超えて照合しないよう、ログインと同じ関数で判定・記録する
+      const passwordHash = row.password_hash;
+      const result = await verifyWithLockout(
+        app.db,
+        { email: row.email, userId: row.id, ip: request.ip, now: Date.now() },
+        () => verifyPassword(passwordHash, request.body.currentPassword),
+      );
+      if (result.status === 'locked') {
+        audit(request, 'password.change.failure', row.id, { reason: 'locked' });
         return reply.code(429).send({ message: LOCKED_MESSAGE });
       }
-      const ok = await verifyPassword(row.password_hash, request.body.currentPassword);
-      const { lockedNow } = recordLoginAttempt(app.db, {
-        email: row.email,
-        userId: row.id,
-        succeeded: ok,
-        ip: request.ip,
-        now,
-      });
+      const { ok, lockedNow } = result;
       if (!ok) {
         audit(request, 'password.change.failure', row.id, { reason: 'wrong_current_password' });
         if (lockedNow) audit(request, 'account.locked', row.id);
@@ -77,9 +77,12 @@ export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
         return reply.code(400).send({ message: passwordProblemMessage(problem), reason: problem });
       }
       updatePasswordHash(app.db, row.id, await hashPassword(request.body.newPassword));
-      // 古いパスワードで入っていたかもしれない他の端末を締め出す。今の端末は使い続けられるよう残す
-      const ended = endAllSessions(request, row.id, { keepCurrent: true });
-      audit(request, 'password.change', row.id, { otherSessionsEnded: ended });
+      // 古いパスワードで入っていたかもしれない端末を締め出す。今の端末も、同じ ID を使い続けると
+      // その Cookie が盗まれていた場合に変更後も使われ続けるので、いったん消して新しい ID を発行し直す
+      // （権限や資格情報が変わったときにセッション ID を作り直す。OWASP Session Management の推奨）
+      const ended = endAllSessions(request, row.id, { keepCurrent: false });
+      startSession(request, reply, row.id);
+      audit(request, 'password.change', row.id, { otherSessionsEnded: Math.max(ended - 1, 0) });
       return reply.send({ message: 'パスワードを変更しました。ほかの端末はログアウトされました' });
     },
   );

@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { audit } from '../auth/audit.js';
 import { normalizeEmail } from '../auth/email.js';
-import { LOCKED_MESSAGE, lockedUntil, recordLoginAttempt } from '../auth/lockout.js';
+import { LOCKED_MESSAGE, verifyWithLockout } from '../auth/lockout.js';
 import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from '../auth/password.js';
 import { startSession } from '../auth/session.js';
 import { findUserByEmail, updatePasswordHash } from '../db/repo.js';
@@ -39,24 +39,21 @@ export const loginRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
       // S9: ロック中は、正しいパスワードでも照合しない。
       // ロックはメールアドレス単位で、未登録のメールにも同じ規則が働く（ロックの有無から登録を推測させない）
-      if (lockedUntil(app.db, email, now) !== null) {
+      // 未登録・パスキーのみのユーザーでも、本物と同じだけ時間をかけてから失敗にする（列挙防止）
+      // TODO(C): password_hash が NULL（パスキーのみ）のユーザーには、パスキーでのログインを案内する
+      const result = await verifyWithLockout(
+        app.db,
+        { email, userId: user?.id ?? null, ip: request.ip, now },
+        () =>
+          user?.password_hash
+            ? verifyPassword(user.password_hash, request.body.password)
+            : verifyAgainstDummy(request.body.password),
+      );
+      if (result.status === 'locked') {
         audit(request, 'login.locked', user?.id ?? null);
         return reply.code(429).send({ message: LOCKED_MESSAGE });
       }
-
-      // 未登録・パスキーのみのユーザーでも、本物と同じだけ時間をかけてから失敗にする（列挙防止）
-      // TODO(C): password_hash が NULL（パスキーのみ）のユーザーには、パスキーでのログインを案内する
-      const ok = user?.password_hash
-        ? await verifyPassword(user.password_hash, request.body.password)
-        : await verifyAgainstDummy(request.body.password);
-
-      const { lockedNow } = recordLoginAttempt(app.db, {
-        email,
-        userId: user?.id ?? null,
-        succeeded: ok,
-        ip: request.ip,
-        now,
-      });
+      const { ok, lockedNow } = result;
 
       if (!user || !ok) {
         // 監査ログには理由を分けて残す（運用者が攻撃の種類を見分けるため）。利用者への応答は分けない

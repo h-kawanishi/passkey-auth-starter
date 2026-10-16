@@ -49,6 +49,10 @@ export function startSession(request: FastifyRequest, reply: FastifyReply, userI
   const now = Date.now();
   // S7: 256bit の乱数。推測で他人のセッションに当てることは現実的にできない
   const rawId = randomBytes(32).toString('base64url');
+  // すでに Cookie が指すセッションがあれば消しておく。古い ID が残ると、その Cookie が盗まれていた場合に
+  // 新しい ID を発行した後も使われ続けてしまう
+  const previous = currentSessionIdHash(request);
+  if (previous) deleteSession(db, previous);
   // 期限切れの行がたまり続けないよう、発行のついでに掃除する
   deleteExpiredSessions(db, now);
   insertSession(db, {

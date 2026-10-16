@@ -94,13 +94,16 @@ describe('パスワード変更と全端末ログアウト', () => {
 
     const res = await post(app, '/account/password', { currentPassword: password, newPassword }, { cookie });
     expect(res.statusCode).toBe(200);
+    // 今の端末には新しい ID が発行し直され、変更前の ID（盗まれていたかもしれない）は使えなくなる
+    const renewed = sessionCookie(res);
+    expect(renewed).not.toBe(cookie);
 
     expect((await post(app, '/login', { email, password })).statusCode).toBe(401);
     expect((await post(app, '/login', { email, password: newPassword })).statusCode).toBe(200);
-    const meHere = await app.inject({ method: 'GET', url: '/account/me', headers: { cookie } });
-    const meOther = await app.inject({ method: 'GET', url: '/account/me', headers: { cookie: other } });
-    expect(meHere.statusCode).toBe(200);
-    expect(meOther.statusCode).toBe(401);
+    const me = (c: string) => app.inject({ method: 'GET', url: '/account/me', headers: { cookie: c } });
+    expect((await me(renewed)).statusCode).toBe(200);
+    expect((await me(cookie)).statusCode).toBe(401);
+    expect((await me(other)).statusCode).toBe(401);
   });
 
   it('現在のパスワードが違えば変更しない。新しいパスワードにも S2 の規則を当てる', async () => {
@@ -128,6 +131,15 @@ describe('パスワード変更と全端末ログアウト', () => {
       newPassword: randomPassword(),
     });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('ログイン済みの端末でもう一度ログインすると、前のセッション ID は使えなくなる', async () => {
+    const { email, password, cookie } = await signup(app);
+    const res = await post(app, '/login', { email, password }, { cookie });
+    expect(res.statusCode).toBe(200);
+    const me = (c: string) => app.inject({ method: 'GET', url: '/account/me', headers: { cookie: c } });
+    expect((await me(sessionCookie(res))).statusCode).toBe(200);
+    expect((await me(cookie)).statusCode).toBe(401);
   });
 
   it('全端末ログアウトで、その利用者のすべてのセッションが失効する', async () => {
