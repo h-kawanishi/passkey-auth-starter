@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
 
 // 開発用サーバー（既定 3000）と衝突しないよう、E2E 専用のポートを使う。
-const PORT = 3123;
+// 複数の作業ツリーで同時に E2E を走らせるときは E2E_PORT で変える（reuseExistingServer で他方のサーバーを拾わないため）。
+const PORT = Number(process.env.E2E_PORT ?? 3123);
 const ORIGIN = `http://localhost:${PORT}`;
 
 export default defineConfig({
