@@ -61,6 +61,11 @@ function parse(md: string): { prose: string[]; fences: Fence[] } {
   return { prose, fences };
 }
 
+// 設計書 §8 の「各章 A4 で 2〜3 枚」の目安。A4 1 枚を 1,500 字程度と見て、3 枚に収まる量にする
+const MAX_CHAPTER_CHARS = 4500;
+// 設計書 §8 の「絶対安全」「100%」と、jumpstack.co.jp の記事の禁止語「必ず」
+const BANNED_WORDS = /絶対|必ず|100\s*[%％]|１００\s*[%％]/;
+
 const read = (file: string): string => readFileSync(join(GUIDE_DIR, file), 'utf8');
 
 // 引用の 1 行目。言語ごとのコメントの書き方に合わせる（// 出典: / -- 出典: / <!-- 出典: -->）
@@ -133,8 +138,14 @@ describe.each(CHAPTERS)('docs/guide/%s', (file) => {
     expect(problems).toEqual([]);
   });
 
-  it('「絶対」「100%」を書かない（設計書 §8 の書き方の約束）', () => {
-    expect(md).not.toMatch(/絶対|100\s*[%％]/);
+  it('「絶対」「100%」「必ず」を書かない（設計書 §8 の書き方の約束）', () => {
+    // 「必ず」は jumpstack.co.jp 側の変換スクリプトが禁止語にしているので、ここでも先に止める
+    expect(md).not.toMatch(BANNED_WORDS);
+  });
+
+  it(`A4 で 2〜3 枚に収まる（空白を除いて ${MAX_CHAPTER_CHARS} 字以内、設計書 §8）`, () => {
+    // 引用や図も紙面を使うので、フェンスの中も含めて数える。空白は改行やインデントで増減するので除く
+    expect(md.replace(/\s/g, '').length).toBeLessThanOrEqual(MAX_CHAPTER_CHARS);
   });
 });
 
@@ -155,7 +166,7 @@ describe('README', () => {
     }
   });
 
-  it('「絶対」「100%」を書かない', () => {
-    expect(readme).not.toMatch(/絶対|100\s*[%％]/);
+  it('「絶対」「100%」「必ず」を書かない', () => {
+    expect(readme).not.toMatch(BANNED_WORDS);
   });
 });

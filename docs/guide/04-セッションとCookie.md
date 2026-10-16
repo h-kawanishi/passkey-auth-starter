@@ -34,7 +34,7 @@ sequenceDiagram
 連番や時刻のような「規則のある値」を使うと、他人の番号を推測されてしまいます。
 
 ```ts
-// 出典: src/auth/session.ts:47-51
+// 出典: src/auth/session.ts:55-59
 export function startSession(request: FastifyRequest, reply: FastifyReply, userId: number): void {
   const db = request.server.db;
   const now = Date.now();
@@ -48,7 +48,7 @@ Cookie には、**属性**（ブラウザにその Cookie の扱い方を指示�
 このプロジェクトでは、セッションの Cookie に次の 3 つを付けています。
 
 ```ts
-// 出典: src/auth/session.ts:66-75
+// 出典: src/auth/session.ts:76-85
   void reply.setCookie(sessionCookieName(request), rawId, {
     // S7: HttpOnly。ページの JavaScript から読めないので、XSS があっても Cookie を盗み出せない
     httpOnly: true,
@@ -76,14 +76,10 @@ Secure は本番だけで付けています。手元で開発するときの `ht
 
 セッション ID も「ログインに使える秘密」なので、パスワードと同じく DB にそのまま保存しません。
 保存するのは、`SESSION_SECRET`（設定ファイルに書く、サーバーだけが知る秘密の値）を鍵にした
-**HMAC**（エイチマック。秘密の鍵を混ぜて計算するハッシュ）だけです。
+**HMAC**（エイチマック。秘密の鍵を混ぜて計算するハッシュ）だけです。DB が漏れても、鍵が無ければ有効な Cookie を作れません。
 
 ```ts
-// 出典: src/auth/session.ts:28-34
-/**
- * S7: DB にはセッション ID そのものではなく、SESSION_SECRET を鍵にした HMAC-SHA256 だけを保存する。
- * DB が漏れても、鍵が無ければそこから有効な Cookie を作れない。
- */
+// 出典: src/auth/session.ts:40-42
 function hashSessionId(request: FastifyRequest, rawId: string): Buffer {
   return createHmac('sha256', request.server.config.sessionSecret).update(rawId).digest();
 }
@@ -91,22 +87,14 @@ function hashSessionId(request: FastifyRequest, rawId: string): Buffer {
 
 パスワードには遅いハッシュ（Argon2id）を使いましたが、セッション ID には速い HMAC を使っています。
 人が考えたパスワードと違って、256bit の乱数は総当たりで元に戻せないので、わざと遅くする必要がないからです。
-むしろ、ページを開くたびに計算するので、速いことが大切です。
+ページを開くたびに計算するので、むしろ速いことが大切です。
 
 ## ログインのたびに新しい ID にする
 
 ログインの前から持っていた ID を、ログイン後もそのまま使い続けると、
 **セッション固定攻撃**（攻撃者が用意した ID を被害者に使わせ、被害者がログインした後にその ID で入る攻撃）が成り立ちます。
 
-そこで、ログインのたびに新しい ID を作り、古い ID は消します。
-
-```ts
-// 出典: src/auth/session.ts:52-55
-  // すでに Cookie が指すセッションがあれば消しておく。古い ID が残ると、その Cookie が盗まれていた場合に
-  // 新しい ID を発行した後も使われ続けてしまう
-  const previous = currentSessionIdHash(request);
-  if (previous) deleteSession(db, previous);
-```
+そこで、`startSession` はログインのたびに新しい ID を作り、Cookie が指していた古い ID は DB から消します。
 
 パスワードを変更したときも同じ考え方で、ほかの端末のセッションをすべて消し、今の端末にも新しい ID を発行し直します（`src/routes/account.ts`）。
 
