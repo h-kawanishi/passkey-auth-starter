@@ -108,7 +108,7 @@ describe('パスキーでの登録とログイン（結合）', () => {
     await new TestBrowser(app, config.origin).signup(alice, 'alice@example.com');
     await new TestBrowser(app, config.origin).signup(bob, 'bob@example.com');
 
-    // Alice の鍵で署名し、ID だけ Bob のものにする
+    // 「自分の鍵で署名して、他人の鍵の ID を名乗る」攻撃を再現する。サーバーが ID の持ち主の公開鍵で検証していれば通らない
     const res = await browser.login(alice, { claimCredentialId: bob.credentialId });
     expect(res.statusCode).toBe(401);
     expect(res.json()).toEqual({ message: 'パスキーでログインできませんでした。' });
@@ -129,7 +129,7 @@ describe('パスキーでの登録とログイン（結合）', () => {
     const response = auth.authenticate(opt.json());
     const ticket = browser.cookies.get('pk_ceremony') ?? '';
     expect((await browser.request('POST', '/passkeys/login/verify', { response })).statusCode).toBe(200);
-    // 消された引換券の Cookie を戻して再送する
+    // 盗み見た応答を後から送り直す（リプレイ）攻撃を再現するため、消された引換券の Cookie を戻して再送する
     browser.cookies.set('pk_ceremony', ticket);
     expect((await browser.request('POST', '/passkeys/login/verify', { response })).statusCode).toBe(400);
   });

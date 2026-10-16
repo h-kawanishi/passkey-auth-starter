@@ -1,5 +1,5 @@
 // セッションの発行・検証・失効。
-// パスキー（C）や回復（D）のルートからも使えるよう、「今のユーザーを得る」「ログイン状態にする」を
+// パスワードとパスキーのどちらで入っても同じ仕組みのセッションになるよう、「今のユーザーを得る」「ログイン状態にする」を
 // ここの関数として公開する。
 import { createHmac, randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -88,7 +88,7 @@ export function startSession(request: FastifyRequest, reply: FastifyReply, userI
 export interface CurrentUser {
   id: number;
   email: string;
-  /** false は「パスキーのみ」のユーザー（C の範囲） */
+  /** false は「パスキーのみ」のユーザー。画面がパスワード変更の代わりに再設定の案内を出すために使う */
   hasPassword: boolean;
   /** このセッションで最後に本人確認した時刻（ログイン・再認証）。null はまだしていない */
   reauthenticatedAt: number | null;

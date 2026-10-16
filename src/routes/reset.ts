@@ -146,7 +146,7 @@ export const resetRoutes: FastifyPluginCallback = (app, _opts, done) => {
         const userId = consumeResetToken(app.db, request.body.token, now); // S10: 使い切り・期限
         if (userId === undefined) return undefined;
         updatePasswordHash(app.db, userId, passwordHash);
-        // 同じ人に送った他のリンクも使えなくする
+        // 同じ人に送った他のリンクも使えなくする。受信箱に残った古いリンクで、決めたばかりのパスワードを上書きされないように
         invalidateResetTokensOfUser(app.db, userId, now);
         // パスワードを知った第三者がすでに入っていたかもしれないので、全端末をログアウトさせる。
         // ただしパスキー（credentials）には触れない。パスキーの追加には直近 5 分以内の本人確認を求めているので

@@ -41,7 +41,7 @@ export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
       const row = findUserById(app.db, user.id);
       if (!row?.password_hash) {
         // パスキーのみのユーザーは、ログイン画面の「パスワードを忘れた場合」（再設定メール）でパスワードを足せる。
-        // ログイン中の画面からその場で足せるようにするかは未決（D の PR の「人間の判断が必要な点」）
+        // ログイン中の画面からその場で足せるようにするかは未決（人間の判断待ち）
         return reply.code(400).send({ message: 'このアカウントにはパスワードが設定されていません' });
       }
 

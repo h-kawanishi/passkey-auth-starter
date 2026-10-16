@@ -14,7 +14,7 @@ export function normalizeEmail(email: string): string {
 
 /**
  * ゆるい形の確認だけをする（@ の前後に文字があり、空白を含まない）。
- * 厳密な検査は、実際に届くかどうか（D の再設定メール）でしか確かめられないので、ここでは誤入力を拾う程度にとどめる。
+ * 厳密な検査は、実際に届くかどうか（再設定メールが届くか）でしか確かめられないので、ここでは誤入力を拾う程度にとどめる。
  */
 export function isPlausibleEmail(email: string): boolean {
   return email.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+$/.test(email);

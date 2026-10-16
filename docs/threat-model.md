@@ -149,7 +149,7 @@ v1.0 の範囲外とした。登録の画面で「登録済み」を伝えない
 | 値 | 保存の仕方 | 要件 | 場所 |
 |---|---|---|---|
 | パスワード | Argon2id + 固有のソルト（元に戻せない・総当たりに時間がかかる） | S1 | `src/auth/password.ts:86` |
-| セッション ID | HMAC-SHA256（鍵は DB の外） | S7 | `src/auth/session.ts:33` |
+| セッション ID | HMAC-SHA256（鍵は DB の外） | S7 | `src/auth/session.ts:41` |
 | 再設定トークン | SHA-256 | S10 | `src/auth/reset.ts:26` |
 | パスキー | 公開鍵だけ（秘密鍵は利用者の端末にある） | S5 | `src/db/migrations/001_init.sql`（credentials） |
 

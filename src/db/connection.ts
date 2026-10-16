@@ -16,7 +16,7 @@ export function openDatabase(path: string): Db {
   const db = new Database(path);
   // SQLite は外部キー制約が既定で無効。ユーザー削除時にセッションや鍵が残らないよう有効にする
   db.pragma('foreign_keys = ON');
-  // 読み書きが同時に起きてもロック待ちになりにくくする
+  // WAL にすると書き込みの最中でも読み取りが待たされない。ログイン確認（読み取り）が登録（書き込み）に止められにくくなる
   if (path !== ':memory:') {
     db.pragma('journal_mode = WAL');
   }
