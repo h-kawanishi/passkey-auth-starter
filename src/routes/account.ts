@@ -7,19 +7,11 @@ import {
   passwordProblemMessage,
   verifyPassword,
 } from '../auth/password.js';
-import { currentUser, endAllSessions, requireUser, startSession } from '../auth/session.js';
+import { endAllSessions, requireUser, startSession } from '../auth/session.js';
 import { findUserById, updatePasswordHash } from '../db/repo.js';
-import { htmlPage } from '../web/pages.js';
 
-// アカウント設定画面とパスワード変更。
-// TODO(C): パスキー一覧・追加・名前変更・削除、パスキーのみのユーザーがパスワードを足す流れ
+// アカウント設定のうち、自分の情報とパスワード変更。画面は routes/pages.ts、パスキーの管理は routes/passkeys.ts にある。
 export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
-  const page = htmlPage('account.html');
-  app.get('/account', (request, reply) => {
-    if (!currentUser(request)) return reply.redirect('/login');
-    return page(reply);
-  });
-
   // 画面に表示する自分の情報。秘密に当たる値（ハッシュなど）は返さない
   app.get('/account/me', (request, reply) => {
     const user = requireUser(request, reply);
@@ -48,7 +40,8 @@ export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
       if (!user) return reply;
       const row = findUserById(app.db, user.id);
       if (!row?.password_hash) {
-        // TODO(C): パスキーのみのユーザーがパスワードを追加する流れ
+        // パスキーのみのユーザーは、ログイン画面の「パスワードを忘れた場合」（再設定メール）でパスワードを足せる。
+        // ログイン中の画面からその場で足せるようにするかは未決（D の PR の「人間の判断が必要な点」）
         return reply.code(400).send({ message: 'このアカウントにはパスワードが設定されていません' });
       }
 

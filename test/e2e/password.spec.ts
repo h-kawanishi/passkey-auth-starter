@@ -22,11 +22,11 @@ test('パスワードで登録・ログアウト・ログインができる', as
   await page.goto('/login');
   await page.getByLabel('メールアドレス').fill(email);
   await page.getByLabel('パスワード').fill(randomBytes(24).toString('base64url'));
-  await page.getByRole('button', { name: 'ログイン' }).click();
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveText('メールアドレスまたはパスワードが違います');
 
   await page.getByLabel('パスワード').fill(password);
-  await page.getByRole('button', { name: 'ログイン' }).click();
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click();
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.locator('[data-me-email]')).toHaveText(email);
 });

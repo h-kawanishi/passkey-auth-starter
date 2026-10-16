@@ -5,25 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ログイン - passkey-auth-starter</title>
 </head>
-<body>
+<body data-page="login">
   <main>
     <h1>ログイン</h1>
     <form method="post" action="/login" data-json>
       <p>
         <label for="email">メールアドレス</label><br>
-        <!-- TODO(C): 条件付き UI のため autocomplete="username webauthn" にする -->
-        <input id="email" name="email" type="email" autocomplete="username" required>
+        <!-- 条件付き UI: autocomplete に webauthn を含めると、この欄の自動入力候補にパスキーが並ぶ（S5） -->
+        <input id="email" name="email" type="email" autocomplete="username webauthn" required>
       </p>
       <p>
         <label for="password">パスワード</label><br>
         <input id="password" name="password" type="password" autocomplete="current-password" required>
       </p>
-      <p data-message aria-live="polite"></p>
+      <p id="message" data-message aria-live="polite"></p>
       <p><button type="submit">ログイン</button></p>
     </form>
-    <p><a href="/signup">新規登録はこちら</a></p>
+    <!-- パスキーを登録済みなら、メールアドレスもパスワードも打たずに入れる（Discoverable Credential, S5） -->
+    <p><button id="passkey-login" type="button">パスキーでログイン</button></p>
     <!-- TODO(D): パスワードを忘れた場合（/reset）へのリンク -->
+    <p><a href="/signup">新規登録はこちら</a></p>
   </main>
-  <script src="/app.js" type="module"></script>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
 </body>
 </html>

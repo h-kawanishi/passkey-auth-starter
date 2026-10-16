@@ -4,14 +4,9 @@ import { isPlausibleEmail, normalizeEmail } from '../auth/email.js';
 import { checkNewPassword, hashPassword, passwordProblemMessage } from '../auth/password.js';
 import { startSession } from '../auth/session.js';
 import { createUser } from '../db/repo.js';
-import { htmlPage } from '../web/pages.js';
 
-// 新規登録（メール + パスワード）。
-// TODO(C): パスキーでの登録
+// 新規登録（メール + パスワード）。画面は routes/pages.ts、パスキーでの登録は routes/passkeys.ts にある。
 export const signupRoutes: FastifyPluginCallback = (app, _opts, done) => {
-  const page = htmlPage('signup.html');
-  app.get('/signup', (_req, reply) => page(reply));
-
   app.post<{ Body: { email: string; password: string } }>(
     '/signup',
     {

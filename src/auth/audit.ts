@@ -3,22 +3,38 @@ import type { FastifyRequest } from 'fastify';
 import { insertAuditLog, type AuditDetail } from '../db/repo.js';
 
 /**
- * 監査ログに残すイベント名。文字列を各所で手書きすると綴りの揺れで検索できなくなるため、ここに集める。
- * C（パスキー）・D（回復）はここに追加する。
+ * 監査ログに残すイベント名の一覧。文字列を各所で手書きすると綴りの揺れで検索できなくなるため、ここに集める。
+ * 一覧を配列（値）としても持つのは、「すべてのイベントが実際に記録されるか」をテストで確かめるため
+ * （test/integration/audit.test.ts）。イベントを足したら、そのテストにも記録させる手順を足す。
  */
-export type AuditEvent =
-  | 'signup'
-  | 'login.success'
-  | 'login.failure'
-  | 'login.locked'
-  | 'account.locked'
-  | 'logout'
-  | 'logout.all'
-  | 'password.change'
-  | 'password.change.failure';
+export const AUDIT_EVENTS = [
+  // 登録（パスワード・パスキーとも。detail.method で見分ける）
+  'signup',
+  // パスワードでのログイン
+  'login.success',
+  'login.failure',
+  'login.locked',
+  // S9: この失敗でアカウントのロックが始まった（パスワード・パスキーのどちらの失敗でも）
+  'account.locked',
+  'logout',
+  'logout.all',
+  'password.change',
+  'password.change.failure',
+  // パスキー（C）
+  'passkey.register',
+  'passkey.register.failure',
+  'passkey.login.success',
+  'passkey.login.failure',
+  'passkey.login.locked',
+  'passkey.rename',
+  'passkey.delete',
+  // TODO(D): パスワード再設定（S10）のイベント
+] as const;
+
+export type AuditEvent = (typeof AUDIT_EVENTS)[number];
 
 /**
- * 監査ログを 1 件書く。detail にパスワード・セッション ID などの生値を入れないこと（S12）。
+ * 監査ログを 1 件書く。detail にパスワード・セッション ID・再設定トークンなどの生値を入れないこと（S12）。
  * IP は「どこから来た攻撃か」を後で調べるために残す。
  */
 export function audit(

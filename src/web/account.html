@@ -5,14 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>アカウント設定 - passkey-auth-starter</title>
 </head>
-<body>
+<body data-page="account">
   <main>
     <h1>アカウント設定</h1>
-    <p>ログイン中: <strong data-me-email></strong></p>
-
-    <!-- TODO(C): パスキー一覧（端末名・作成日・最終利用）、追加、名前変更、削除 -->
+    <p>ログイン中: <strong id="account-email" data-me-email></strong></p>
+    <p id="message" aria-live="polite"></p>
 
     <section>
+      <h2>パスキー</h2>
+      <ul id="passkey-list"></ul>
+      <form id="add-passkey">
+        <label>名前（例: 仕事用ノートPC）
+          <input id="device-name" name="deviceName" maxlength="64">
+        </label>
+        <button type="submit">パスキーを追加</button>
+      </form>
+    </section>
+
+    <section id="password-section" hidden>
       <h2>パスワードの変更</h2>
       <form method="post" action="/account/password" data-json>
         <p>
@@ -28,6 +38,12 @@
       </form>
     </section>
 
+    <section id="no-password-section" hidden>
+      <h2>パスワード</h2>
+      <p>このアカウントはパスキーだけで使っています。</p>
+      <!-- TODO(D): パスワードの再設定（メール）でパスワードを足せることを案内する -->
+    </section>
+
     <section>
       <h2>ログアウト</h2>
       <form method="post" action="/logout" data-json>
@@ -40,6 +56,7 @@
       </form>
     </section>
   </main>
-  <script src="/app.js" type="module"></script>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
 </body>
 </html>
