@@ -31,7 +31,7 @@ CREATE TABLE credentials (
 CREATE INDEX credentials_user_id ON credentials(user_id);
 
 -- 設計書ではセッションの主キーを id としているが、CLAUDE.md の「セッション ID を平文で保存しない」に
--- 従い、Cookie に入れる生の ID（256bit 乱数, S7）の SHA-256 だけを保存する。
+-- 従い、Cookie に入れる生の ID（256bit 乱数, S7）の HMAC-SHA256（鍵は SESSION_SECRET）だけを保存する。
 -- DB が漏れても、そこから有効な Cookie は作れない。
 CREATE TABLE sessions (
   id_hash     BLOB    PRIMARY KEY,

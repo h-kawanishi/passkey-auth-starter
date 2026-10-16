@@ -6,7 +6,8 @@ import { buildApp } from '../../src/server.js';
 describe('server', () => {
   let app: FastifyInstance;
   beforeAll(async () => {
-    app = buildApp(loadConfig({ NODE_ENV: 'test' }));
+    // DATABASE_PATH を指定しないと ./data/app.sqlite を作ってしまうので、メモリ上の DB にする
+    app = buildApp(loadConfig({ NODE_ENV: 'test', DATABASE_PATH: ':memory:' }));
     await app.ready();
   });
   afterAll(async () => {

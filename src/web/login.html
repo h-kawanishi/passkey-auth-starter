@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ログイン - passkey-auth-starter</title>
+</head>
+<body>
+  <main>
+    <h1>ログイン</h1>
+    <form method="post" action="/login" data-json>
+      <p>
+        <label for="email">メールアドレス</label><br>
+        <!-- TODO(C): 条件付き UI のため autocomplete="username webauthn" にする -->
+        <input id="email" name="email" type="email" autocomplete="username" required>
+      </p>
+      <p>
+        <label for="password">パスワード</label><br>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </p>
+      <p data-message aria-live="polite"></p>
+      <p><button type="submit">ログイン</button></p>
+    </form>
+    <p><a href="/signup">新規登録はこちら</a></p>
+    <!-- TODO(D): パスワードを忘れた場合（/reset）へのリンク -->
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

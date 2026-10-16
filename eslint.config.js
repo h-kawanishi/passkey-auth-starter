@@ -24,4 +24,16 @@ export default tseslint.config(
     files: ['**/*.js'],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // 画面のスクリプトはブラウザで動く。Node の globals ではなくブラウザの名前を既知として扱う
+    files: ['src/web/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        location: 'readonly',
+        fetch: 'readonly',
+        FormData: 'readonly',
+      },
+    },
+  },
 );

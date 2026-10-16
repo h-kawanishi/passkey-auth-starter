@@ -1,3 +1,136 @@
 // セッションの発行・検証・失効。
-// TODO(B): S7（256bit 乱数、DB には SHA-256 のみ保存、HttpOnly + SameSite=Lax + 本番は Secure）
-export {};
+// パスキー（C）や回復（D）のルートからも使えるよう、「今のユーザーを得る」「ログイン状態にする」を
+// ここの関数として公開する。
+import { createHmac, randomBytes } from 'node:crypto';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import {
+  deleteExpiredSessions,
+  deleteSession,
+  deleteSessionsOfUser,
+  findActiveSession,
+  findUserById,
+  insertSession,
+  type UserRow,
+} from '../db/repo.js';
+
+/** ログイン状態を保つ時間。長すぎると盗まれた Cookie が長く使え、短すぎると何度もログインさせることになる */
+export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Cookie の名前。本番は `__Host-` 接頭辞を付ける。ブラウザはこの名前の Cookie を
+ * 「Secure 付き・Path=/・Domain 指定なし」でしか受け付けないので、サブドメインからの上書きを防げる。
+ * 開発（http://localhost）では Secure を付けられないため、接頭辞なしの名前を使う。
+ */
+export function sessionCookieName(request: FastifyRequest): string {
+  return request.server.config.cookieSecure ? '__Host-sid' : 'sid';
+}
+
+/**
+ * S7: DB にはセッション ID そのものではなく、SESSION_SECRET を鍵にした HMAC-SHA256 だけを保存する。
+ * DB が漏れても、鍵が無ければそこから有効な Cookie を作れない。
+ */
+function hashSessionId(request: FastifyRequest, rawId: string): Buffer {
+  return createHmac('sha256', request.server.config.sessionSecret).update(rawId).digest();
+}
+
+function rawSessionId(request: FastifyRequest): string | undefined {
+  const value = request.cookies[sessionCookieName(request)];
+  // 256bit を base64url にすると 43 文字。形の違う値は DB を引く前に捨てる
+  return value !== undefined && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : undefined;
+}
+
+/**
+ * ログイン状態にする（新しいセッションを発行して Cookie に入れる）。
+ * ログインのたびに新しい ID を作るので、ログイン前に仕込まれた ID をそのまま使わされる
+ * 「セッション固定攻撃」が成り立たない。
+ */
+export function startSession(request: FastifyRequest, reply: FastifyReply, userId: number): void {
+  const db = request.server.db;
+  const now = Date.now();
+  // S7: 256bit の乱数。推測で他人のセッションに当てることは現実的にできない
+  const rawId = randomBytes(32).toString('base64url');
+  // 期限切れの行がたまり続けないよう、発行のついでに掃除する
+  deleteExpiredSessions(db, now);
+  insertSession(db, {
+    idHash: hashSessionId(request, rawId),
+    userId,
+    createdAt: now,
+    expiresAt: now + SESSION_TTL_MS,
+    ip: request.ip,
+    userAgent: request.headers['user-agent']?.slice(0, 512) ?? null,
+  });
+  void reply.setCookie(sessionCookieName(request), rawId, {
+    // S7: HttpOnly。ページの JavaScript から読めないので、XSS があっても Cookie を盗み出せない
+    httpOnly: true,
+    // S7/S13: SameSite=Lax。他サイトから送られる POST には Cookie が付かない
+    sameSite: 'lax',
+    // S7: 本番（https）では Secure。平文の通信路に Cookie を流さない
+    secure: request.server.config.cookieSecure,
+    path: '/',
+    maxAge: SESSION_TTL_MS / 1000,
+  });
+}
+
+export interface CurrentUser {
+  id: number;
+  email: string;
+  /** false は「パスキーのみ」のユーザー（C の範囲） */
+  hasPassword: boolean;
+}
+
+/** 今のリクエストのログインユーザー。ログインしていなければ null */
+export function currentUser(request: FastifyRequest): CurrentUser | null {
+  const rawId = rawSessionId(request);
+  if (rawId === undefined) return null;
+  const db = request.server.db;
+  const session = findActiveSession(db, hashSessionId(request, rawId), Date.now());
+  if (!session) return null;
+  const user: UserRow | undefined = findUserById(db, session.user_id);
+  if (!user) return null;
+  return { id: user.id, email: user.email, hasPassword: user.password_hash !== null };
+}
+
+/** 今のセッションの ID ハッシュ。「この端末以外をログアウト」のときに残す 1 つを指すために使う */
+export function currentSessionIdHash(request: FastifyRequest): Buffer | undefined {
+  const rawId = rawSessionId(request);
+  return rawId === undefined ? undefined : hashSessionId(request, rawId);
+}
+
+/** この端末のセッションを失効させ、Cookie も消す */
+export function endSession(request: FastifyRequest, reply: FastifyReply): void {
+  const idHash = currentSessionIdHash(request);
+  if (idHash) deleteSession(request.server.db, idHash);
+  clearSessionCookie(request, reply);
+}
+
+/** その利用者の全セッションを失効させる。keepCurrent なら今の端末だけ残す（パスワード変更後など） */
+export function endAllSessions(
+  request: FastifyRequest,
+  userId: number,
+  options: { keepCurrent: boolean },
+): number {
+  const keep = options.keepCurrent ? currentSessionIdHash(request) : undefined;
+  return deleteSessionsOfUser(request.server.db, userId, keep);
+}
+
+export function clearSessionCookie(request: FastifyRequest, reply: FastifyReply): void {
+  void reply.clearCookie(sessionCookieName(request), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: request.server.config.cookieSecure,
+    path: '/',
+  });
+}
+
+/**
+ * ログインが必要な API の入口で使う。未ログインなら 401 を返して null。
+ * 使い方: `const user = requireUser(request, reply); if (!user) return reply;`
+ */
+export function requireUser(request: FastifyRequest, reply: FastifyReply): CurrentUser | null {
+  const user = currentUser(request);
+  if (!user) {
+    void reply.code(401).send({ message: 'ログインしてください' });
+    return null;
+  }
+  return user;
+}

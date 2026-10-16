@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>アカウント設定 - passkey-auth-starter</title>
+</head>
+<body>
+  <main>
+    <h1>アカウント設定</h1>
+    <p>ログイン中: <strong data-me-email></strong></p>
+
+    <!-- TODO(C): パスキー一覧（端末名・作成日・最終利用）、追加、名前変更、削除 -->
+
+    <section>
+      <h2>パスワードの変更</h2>
+      <form method="post" action="/account/password" data-json>
+        <p>
+          <label for="current-password">現在のパスワード</label><br>
+          <input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required>
+        </p>
+        <p>
+          <label for="new-password">新しいパスワード（15 文字以上）</label><br>
+          <input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="15" required>
+        </p>
+        <p data-message aria-live="polite"></p>
+        <p><button type="submit">変更する</button></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>ログアウト</h2>
+      <form method="post" action="/logout" data-json>
+        <p data-message aria-live="polite"></p>
+        <button type="submit">この端末でログアウト</button>
+      </form>
+      <form method="post" action="/logout/all" data-json>
+        <p data-message aria-live="polite"></p>
+        <button type="submit">すべての端末でログアウト</button>
+      </form>
+    </section>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
