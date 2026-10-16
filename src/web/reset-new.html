@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- S12: この画面から外部へ移動しても、Referer に URL を載せない（念のため。トークンは # の後ろで送られない） -->
+  <meta name="referrer" content="no-referrer">
+  <title>新しいパスワード - passkey-auth-starter</title>
+</head>
+<body data-page="reset-new">
+  <main>
+    <h1>新しいパスワードを決める</h1>
+    <form method="post" action="/reset/confirm" data-json>
+      <!-- メールのリンクの # の後ろにあるトークンを、app.js がここに入れる -->
+      <input id="reset-token" name="token" type="hidden">
+      <p>
+        <label for="password">新しいパスワード（15 文字以上）</label><br>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="15" required
+               aria-describedby="password-hint">
+        <br><small id="password-hint">記号や数字を混ぜる必要はありません。覚えやすい長い文やことばの組み合わせがおすすめです。</small>
+      </p>
+      <p data-message aria-live="polite"></p>
+      <p><button type="submit">パスワードを設定する</button></p>
+    </form>
+    <p><a href="/login">ログインへ</a></p>
+  </main>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

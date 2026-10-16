@@ -5,17 +5,12 @@ import { LOCKED_MESSAGE, verifyWithLockout } from '../auth/lockout.js';
 import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from '../auth/password.js';
 import { startSession } from '../auth/session.js';
 import { findUserByEmail, updatePasswordHash } from '../db/repo.js';
-import { htmlPage } from '../web/pages.js';
 
 // 列挙防止: 「存在しないメール」と「パスワード違い」で同じ文言・同じ状態コードを返す
 const BAD_CREDENTIALS_MESSAGE = 'メールアドレスまたはパスワードが違います';
 
-// ログイン（パスワード）。
-// TODO(C): パスキーでのログイン（条件付き UI、S5, S6）
+// ログイン（パスワード）。画面は routes/pages.ts、パスキーでのログインは routes/passkey-login.ts にある。
 export const loginRoutes: FastifyPluginCallback = (app, _opts, done) => {
-  const page = htmlPage('login.html');
-  app.get('/login', (_req, reply) => page(reply));
-
   app.post<{ Body: { email: string; password: string } }>(
     '/login',
     {
@@ -40,7 +35,8 @@ export const loginRoutes: FastifyPluginCallback = (app, _opts, done) => {
       // S9: ロック中は、正しいパスワードでも照合しない。
       // ロックはメールアドレス単位で、未登録のメールにも同じ規則が働く（ロックの有無から登録を推測させない）
       // 未登録・パスキーのみのユーザーでも、本物と同じだけ時間をかけてから失敗にする（列挙防止）
-      // TODO(C): password_hash が NULL（パスキーのみ）のユーザーには、パスキーでのログインを案内する
+      // パスキーのみのユーザー（password_hash が NULL）にも同じ失敗を返す。「パスキーでログインしてください」と
+      // 返し分けると、そのメールが登録済みだと分かってしまうため。案内はログイン画面に常に出しておく
       const result = await verifyWithLockout(
         app.db,
         { email, userId: user?.id ?? null, ip: request.ip, now },

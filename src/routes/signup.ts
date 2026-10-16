@@ -4,14 +4,9 @@ import { isPlausibleEmail, normalizeEmail } from '../auth/email.js';
 import { checkNewPassword, hashPassword, passwordProblemMessage } from '../auth/password.js';
 import { startSession } from '../auth/session.js';
 import { createUser } from '../db/repo.js';
-import { htmlPage } from '../web/pages.js';
 
-// 新規登録（メール + パスワード）。
-// TODO(C): パスキーでの登録
+// 新規登録（メール + パスワード）。画面は routes/pages.ts、パスキーでの登録は routes/passkeys.ts にある。
 export const signupRoutes: FastifyPluginCallback = (app, _opts, done) => {
-  const page = htmlPage('signup.html');
-  app.get('/signup', (_req, reply) => page(reply));
-
   app.post<{ Body: { email: string; password: string } }>(
     '/signup',
     {
@@ -45,7 +40,8 @@ export const signupRoutes: FastifyPluginCallback = (app, _opts, done) => {
       const userId = createUser(app.db, { email, passwordHash, now: Date.now() });
       if (userId === null) {
         // 登録済みであることは、この画面では伝えざるを得ない（伝えないと本人が先へ進めない）。
-        // 列挙の速度はレート制限（S8）で抑える。確認メールを挟む方式は D 以降で検討する。
+        // 列挙の速度は IP ごとのレート制限（S8）で抑える。確認メールを挟む方式は v1.0 の範囲外とし、
+        // 受け入れたリスクとしている（人間の判断 1、threat-model.md §6）。
         return reply.code(409).send({
           message:
             'このメールアドレスでは登録できません。登録済みの場合はログインするか、パスワードの再設定をお試しください',

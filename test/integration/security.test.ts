@@ -8,6 +8,7 @@ import { LOCKOUT_THRESHOLD } from '../../src/auth/lockout.js';
 import { loadConfig } from '../../src/config.js';
 import { buildApp } from '../../src/server.js';
 import type { Db } from '../../src/db/connection.js';
+import { CaptureMailer } from '../helpers/mailer.js';
 import { body, makeApp, post, randomPassword, sessionCookie, signup, uniqueEmail } from '../helpers/app.js';
 
 /** DB の全テーブル・全列の値を 1 つの文字列にする。BLOB は UTF-8 としても 16 進としても含める */
@@ -92,6 +93,8 @@ describe('S7: セッション Cookie', () => {
         DATABASE_PATH: ':memory:',
         LOG_LEVEL: 'silent',
       }),
+      // 本番設定では Mailer を渡さないと起動できない（server.ts の chooseMailer）
+      { mailer: new CaptureMailer() },
     );
     const res = await post(app, '/signup', { email: uniqueEmail(), password: randomPassword() }, { origin });
     expect(res.statusCode).toBe(201);
