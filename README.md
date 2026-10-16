@@ -6,7 +6,7 @@
 - 言語: TypeScript / Node.js 22 / Fastify
 - パスキー: SimpleWebAuthn ／ パスワード: Argon2id ／ DB: SQLite
 - ライセンス: MIT
-- 設計書: [docs/design.md](docs/design.md) ／ 初心者向け解説: [docs/guide/](docs/guide/)（準備中）
+- 設計書: [docs/design.md](docs/design.md) ／ 実装計画: [docs/plan.md](docs/plan.md) ／ 初心者向け解説: [docs/guide/](docs/guide/)（準備中）
 
 紹介ページと解説の HTML 版: https://jumpstack.co.jp/passkey-auth-starter/ （準備中）
 
