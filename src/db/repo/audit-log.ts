@@ -20,3 +20,13 @@ export function insertAuditLog(
   );
 }
 
+/**
+ * since 以降に記録された、ある利用者のあるイベントの件数。
+ * 再設定メールの送りすぎ（メール爆撃）を、利用者単位で抑えるために使う（S8）。
+ */
+export function countAuditEvents(db: Db, userId: number, event: string, since: number): number {
+  return db
+    .prepare('SELECT COUNT(*) FROM audit_log WHERE user_id = ? AND event = ? AND at >= ?')
+    .pluck()
+    .get(userId, event, since) as number;
+}

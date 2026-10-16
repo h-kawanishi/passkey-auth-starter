@@ -6,6 +6,6 @@
 export * from './repo/users.js';
 export * from './repo/credentials.js';
 export * from './repo/sessions.js';
-// TODO(D): reset_tokens の読み書き
+export * from './repo/reset-tokens.js';
 export * from './repo/login-attempts.js';
 export * from './repo/audit-log.js';

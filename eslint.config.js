@@ -36,6 +36,8 @@ export default tseslint.config(
         location: 'readonly',
         fetch: 'readonly',
         FormData: 'readonly',
+        URLSearchParams: 'readonly',
+        history: 'readonly',
         SimpleWebAuthnBrowser: 'readonly',
       },
     },

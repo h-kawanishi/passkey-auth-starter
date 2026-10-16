@@ -29,7 +29,9 @@ export const pageRoutes: FastifyPluginCallback = (app, _opts, done) => {
     '/': read('index.html'),
     '/login': read('login.html'),
     '/signup': read('signup.html'),
-    // TODO(D): パスワード忘れの画面（/reset）
+    // パスワード忘れ（D）。/reset はメール入力、/reset/new はメールのリンクから開く新パスワードの入力
+    '/reset': read('reset.html'),
+    '/reset/new': read('reset-new.html'),
   };
   for (const [url, body] of Object.entries(pages)) {
     app.get(url, (_req, reply) => reply.type(html).send(body));

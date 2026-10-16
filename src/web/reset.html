@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>パスワードの再設定 - passkey-auth-starter</title>
+</head>
+<body data-page="reset">
+  <main>
+    <h1>パスワードの再設定</h1>
+    <p>登録したメールアドレスに、新しいパスワードを決めるためのリンクを送ります。
+      リンクの有効期限は 15 分で、1 回だけ使えます。</p>
+    <!-- S11: メールはアカウントの回復にだけ使う。リンクを開いてもログイン状態にはならない -->
+    <form method="post" action="/reset" data-json>
+      <p>
+        <label for="email">メールアドレス</label><br>
+        <input id="email" name="email" type="email" autocomplete="username" required>
+      </p>
+      <p data-message aria-live="polite"></p>
+      <p><button type="submit">再設定のメールを送る</button></p>
+    </form>
+    <p><a href="/login">ログインに戻る</a></p>
+  </main>
+  <script src="/assets/simplewebauthn-browser.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

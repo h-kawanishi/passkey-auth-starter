@@ -8,7 +8,7 @@ import {
   verifyPassword,
 } from '../auth/password.js';
 import { endAllSessions, requireUser, startSession } from '../auth/session.js';
-import { findUserById, updatePasswordHash } from '../db/repo.js';
+import { findUserById, invalidateResetTokensOfUser, updatePasswordHash } from '../db/repo.js';
 
 // アカウント設定のうち、自分の情報とパスワード変更。画面は routes/pages.ts、パスキーの管理は routes/passkeys.ts にある。
 export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
@@ -70,6 +70,8 @@ export const accountRoutes: FastifyPluginCallback = (app, _opts, done) => {
         return reply.code(400).send({ message: passwordProblemMessage(problem), reason: problem });
       }
       updatePasswordHash(app.db, row.id, await hashPassword(request.body.newPassword));
+      // S10: 変更前に発行された再設定リンクは使えなくする。古いリンクで新しいパスワードを上書きされないように
+      invalidateResetTokensOfUser(app.db, row.id, Date.now());
       // 古いパスワードで入っていたかもしれない端末を締め出す。今の端末も、同じ ID を使い続けると
       // その Cookie が盗まれていた場合に変更後も使われ続けるので、いったん消して新しい ID を発行し直す
       // （権限や資格情報が変わったときにセッション ID を作り直す。OWASP Session Management の推奨）

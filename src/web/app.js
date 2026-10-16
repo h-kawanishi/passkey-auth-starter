@@ -187,6 +187,19 @@ function initAccount() {
   });
 }
 
+// ---------------------------------------------------------------- 新しいパスワードの設定画面（再設定リンクの先）
+
+function initResetNew() {
+  // トークンは URL の # の後ろにある（サーバーへは送られない部分。auth/reset.ts の resetLink を参照）。
+  // 読み取ったらアドレス欄と履歴から消す。画面を共有したり URL をコピーしたりしたときに漏れないように
+  const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('reset-token').value = token;
+  if (token === '') {
+    showMessage('リンクが正しくありません。メールのリンクをもう一度開いてください', true, document.querySelector('form'));
+  }
+}
+
 // ---------------------------------------------------------------- 入口
 
 const page = document.body.dataset.page;
@@ -196,3 +209,4 @@ if ((page === 'login' || page === 'signup' || page === 'account') && !browserSup
 if (page === 'login') initLogin();
 if (page === 'signup') initSignup();
 if (page === 'account') initAccount();
+if (page === 'reset-new') initResetNew();

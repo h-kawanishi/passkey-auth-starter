@@ -3,6 +3,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { loadConfig } from '../../src/config.js';
 import { buildApp } from '../../src/server.js';
 import type { AppOptions } from '../../src/types.js';
+import { CaptureMailer } from './mailer.js';
 
 export const ORIGIN = 'http://localhost:3000';
 
@@ -18,7 +19,8 @@ export async function makeApp(options: AppOptions = {}): Promise<FastifyInstance
       DATABASE_PATH: ':memory:',
       SESSION_SECRET: randomBytes(32).toString('base64url'),
     }),
-    { authRateLimit: { max: 1000, timeWindowMs: 60_000 }, ...options },
+    // 再設定メールは標準出力に出さず、テストから中身を読めるよう覚えておく
+    { authRateLimit: { max: 1000, timeWindowMs: 60_000 }, mailer: new CaptureMailer(), ...options },
   );
   await app.ready();
   return app;

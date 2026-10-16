@@ -6,6 +6,7 @@ import { loadConfig, type Config } from '../../src/config.js';
 import { openDatabase, type Db } from '../../src/db/connection.js';
 import { buildApp } from '../../src/server.js';
 import { TestBrowser } from '../helpers/passkey-client.js';
+import { CaptureMailer } from '../helpers/mailer.js';
 import { SoftAuthenticator } from '../helpers/soft-authenticator.js';
 
 const testConfig = loadConfig({ NODE_ENV: 'test', PORT: '3999', DATABASE_PATH: ':memory:' });
@@ -15,7 +16,8 @@ let app: FastifyInstance;
 
 async function start(config: Config): Promise<void> {
   db = openDatabase(':memory:');
-  app = buildApp(config, { db });
+  // 本番設定では Mailer を渡さないと起動できない（server.ts の chooseMailer）
+  app = buildApp(config, { db, mailer: new CaptureMailer() });
   await app.ready();
 }
 

@@ -1,6 +1,7 @@
 import type { ChallengeStore } from './auth/challenges.js';
 import type { Config } from './config.js';
 import type { Db } from './db/connection.js';
+import type { Mailer } from './mail/mailer.js';
 
 /** レート制限の設定。@fastify/rate-limit の route config にそのまま渡す形 */
 export interface RateLimitSetting {
@@ -11,7 +12,7 @@ export interface RateLimitSetting {
 /** buildApp に渡せる、テストや運用で変えたい値。環境変数ではなく引数にしているのは、テストごとに変えたいため */
 export interface AppOptions {
   /**
-   * S8: IP ごとのレート制限（ログイン・登録・パスワード変更）。
+   * S8: IP ごとのレート制限（ログイン・登録・パスワード変更・パスワード再設定）。
    * 既定は 15 分あたり 30 回。人の操作では届かず、総当たりの速度は大きく落ちる値にしている。
    */
   authRateLimit?: RateLimitSetting;
@@ -28,6 +29,11 @@ export interface AppOptions {
    * 省略時は config.databasePath を開き、アプリを閉じるときに一緒に閉じる。
    */
   db?: Db;
+  /**
+   * 再設定メールの送信手段（S10, S11）。本番では必ず渡す（コンソール出力は開発用で、本番では使えない）。
+   * 省略時は、本番以外ならコンソール出力（ConsoleMailer）を使う。
+   */
+  mailer?: Mailer;
 }
 
 // Fastify のインスタンスに設定と DB を持たせる（decorate）。
@@ -36,6 +42,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     config: Config;
     db: Db;
+    mailer: Mailer;
     /** パスキーのチャレンジ（使い捨ての乱数）の一時保管 */
     challenges: ChallengeStore;
     authRateLimit: { max: number; timeWindow: number };

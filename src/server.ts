@@ -7,6 +7,8 @@ import { verifyOrigin } from './auth/origin.js';
 import { ConfigError, loadConfig, type Config } from './config.js';
 import { openDatabase } from './db/connection.js';
 import { migrate } from './db/migrate.js';
+import { ConsoleMailer } from './mail/console-mailer.js';
+import type { Mailer } from './mail/mailer.js';
 import { accountRoutes } from './routes/account.js';
 import { loginRoutes } from './routes/login.js';
 import { logoutRoutes } from './routes/logout.js';
@@ -18,10 +20,26 @@ import { signupRoutes } from './routes/signup.js';
 import type { AppOptions } from './types.js';
 
 /**
+ * 本番では、送信事業者につながる Mailer を必ず渡させる。
+ * 黙ってコンソールに出すと、再設定メールが誰にも届かないまま「送りました」と答え続けることになるため、
+ * 起動の時点で止める（S10: 再設定はメールでのみ通知する）。
+ */
+function chooseMailer(config: Config, mailer: Mailer | undefined): Mailer {
+  if (mailer) return mailer;
+  if (config.nodeEnv === 'production') {
+    throw new ConfigError([
+      '本番では再設定メールの送信手段（Mailer）を buildApp の mailer に渡してください（src/mail/mailer.ts）',
+    ]);
+  }
+  return new ConsoleMailer(config.nodeEnv);
+}
+
+/**
  * アプリを組み立てて返す（listen はしない）。
  * 起動と分けているのは、テストで app.inject() を使い、ポートを開かずに要求を試せるようにするため。
  */
 export function buildApp(config: Config, options: AppOptions = {}): FastifyInstance {
+  const mailer = chooseMailer(config, options.mailer);
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -40,6 +58,7 @@ export function buildApp(config: Config, options: AppOptions = {}): FastifyInsta
   }
   app.decorate('config', config);
   app.decorate('db', db);
+  app.decorate('mailer', mailer);
   app.decorate('challenges', new ChallengeStore());
 
   // セッション Cookie の読み書き。署名は使わない（ID 自体が 256bit 乱数で、DB 側の HMAC で照合するため）
@@ -80,6 +99,7 @@ async function main(): Promise<void> {
   let config: Config;
   try {
     config = loadConfig();
+    // 本番で使うときは、ここで自分の送信事業者向けの Mailer を渡す: buildApp(config, { mailer })
     app = buildApp(config);
   } catch (err) {
     if (err instanceof ConfigError) {
