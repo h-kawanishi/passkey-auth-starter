@@ -1,4 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { expireReauth } from './db.js';
 
 // Chrome DevTools Protocol の WebAuthn 仮想認証器で、本物のブラウザの navigator.credentials を動かす。
 // 指紋センサーや PIN の代わりを CDP が務めるので、CI でも人の操作なしにパスキーを試せる。
@@ -57,18 +59,36 @@ test('パスキーで登録 → ログアウト → パスキーでログイン�
   await expect(page.locator('#passkey-list li')).toContainText('最終利用');
 });
 
-test('アカウント設定でパスキーを追加・名前変更できる', async ({ page }) => {
+test('アカウント設定でパスキーを追加・名前変更できる（5 分を過ぎたら既存のパスキーで本人確認してから）', async ({
+  page,
+}) => {
   await addVirtualAuthenticator(page);
   const email = `e2e-add-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   await page.goto('/signup');
   await page.getByLabel('メールアドレス').fill(email);
   await page.getByRole('button', { name: 'パスキーで登録' }).click();
   await expect(page).toHaveURL(/\/account$/);
+  await expect(page.locator('#passkey-list li')).toHaveCount(1);
+
+  // 登録（ログイン）から 5 分が過ぎた状態にする。追加の前に本人確認を求められる（人間の判断 2）
+  expireReauth(email);
 
   // 2 本目は別の認証器（セキュリティキー）として足す。同じ認証器は excludeCredentials で弾かれ、
   // 仮想の内蔵認証器は 1 つしか作れないため
   await addVirtualAuthenticator(page, 'usb');
   await page.getByLabel('名前').fill('仕事用ノートPC');
+  await page.getByRole('button', { name: 'パスキーを追加' }).click();
+  await expect(page.locator('#message')).toContainText('本人確認をしてください');
+  await expect(page.locator('#reauth-section')).toBeVisible();
+  // パスキーのみのユーザーなので、パスワードの欄は出ない
+  await expect(page.locator('#reauth-password-form')).toBeHidden();
+  await expect(page.locator('#passkey-list li')).toHaveCount(1);
+
+  // 内蔵認証器にある 1 本目のパスキーで本人確認する
+  await page.getByRole('button', { name: '登録済みのパスキーで確認' }).click();
+  await expect(page.locator('#message')).toContainText('本人確認ができました');
+  await expect(page.locator('#reauth-section')).toBeHidden();
+
   await page.getByRole('button', { name: 'パスキーを追加' }).click();
   await expect(page.locator('#passkey-list li')).toHaveCount(2);
   await expect(page.locator('#passkey-list')).toContainText('仕事用ノートPC');
@@ -91,4 +111,35 @@ test('条件付き UI: ログイン画面を開くだけで、自動入力のパ
   await page.goto('/login');
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.locator('#account-email')).toHaveText(email);
+});
+
+test('パスワードのユーザーは、5 分を過ぎたらパスワードで本人確認してからパスキーを追加できる', async ({ page }) => {
+  await addVirtualAuthenticator(page);
+  const email = `e2e-reauth-${randomBytes(4).toString('hex')}@example.com`;
+  // テストの期待値に生値を書かないよう、毎回ランダムに作る
+  const password = randomBytes(24).toString('base64url');
+  await page.goto('/signup');
+  await page.getByLabel('メールアドレス').fill(email);
+  await page.getByLabel('パスワード（15 文字以上）').fill(password);
+  await page.getByRole('button', { name: '登録する' }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(page.locator('[data-me-email]')).toHaveText(email);
+
+  expireReauth(email);
+  await page.getByRole('button', { name: 'パスキーを追加' }).click();
+  await expect(page.locator('#reauth-section')).toBeVisible();
+  // パスキーをまだ持たないので、パスキーで確認するボタンは出ない
+  await expect(page.locator('#reauth-passkey-row')).toBeHidden();
+
+  // 間違ったパスワードでは確認できない
+  await page.locator('#reauth-password').fill(randomBytes(24).toString('base64url'));
+  await page.getByRole('button', { name: 'パスワードで確認' }).click();
+  await expect(page.locator('#reauth-message')).toHaveText('パスワードが違います');
+
+  await page.locator('#reauth-password').fill(password);
+  await page.getByRole('button', { name: 'パスワードで確認' }).click();
+  await expect(page.locator('#reauth-section')).toBeHidden();
+  await page.getByRole('button', { name: 'パスキーを追加' }).click();
+  await expect(page.locator('#passkey-list li')).toHaveCount(1);
+  await expect(page.locator('#message')).toHaveText('パスキーを追加しました。');
 });

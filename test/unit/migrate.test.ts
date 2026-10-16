@@ -1,6 +1,11 @@
+import { copyFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type Db } from '../../src/db/connection.js';
 import { migrate } from '../../src/db/migrate.js';
+
+const MIGRATIONS = join(import.meta.dirname, '..', '..', 'src', 'db', 'migrations');
 
 describe('migrate', () => {
   let db: Db;
@@ -13,7 +18,7 @@ describe('migrate', () => {
 
   it('§5 の表をすべて作る', () => {
     const { applied } = migrate(db);
-    expect(applied).toEqual(['001_init.sql']);
+    expect(applied).toEqual(['001_init.sql', '002_session_reauth.sql']);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -28,6 +33,25 @@ describe('migrate', () => {
       'sessions',
       'users',
     ]);
+  });
+
+  it('001 だけ適用済みの DB にも 002 を後から当てられ、既存のセッションは「未確認」（NULL）になる', () => {
+    // 001 を適用した時点の状態を、001 だけを入れた一時ディレクトリで作る
+    const dir = mkdtempSync(join(tmpdir(), 'migrate-'));
+    copyFileSync(join(MIGRATIONS, '001_init.sql'), join(dir, '001_init.sql'));
+    expect(migrate(db, dir).applied).toEqual(['001_init.sql']);
+    const now = Date.now();
+    const userId = db.prepare('INSERT INTO users (email, created_at) VALUES (?, ?)').run('old@example.com', now)
+      .lastInsertRowid;
+    db.prepare('INSERT INTO sessions (id_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(
+      Buffer.from([9]),
+      userId,
+      now,
+      now + 1000,
+    );
+
+    expect(migrate(db).applied).toEqual(['002_session_reauth.sql']);
+    expect(db.prepare('SELECT reauthenticated_at FROM sessions').pluck().get()).toBeNull();
   });
 
   it('2 回目は何も適用しない（何度実行しても壊れない）', () => {

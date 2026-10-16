@@ -10,11 +10,19 @@ import {
   findActiveSession,
   findUserById,
   insertSession,
+  setSessionReauthenticatedAt,
   type UserRow,
 } from '../db/repo.js';
 
 /** ログイン状態を保つ時間。長すぎると盗まれた Cookie が長く使え、短すぎると何度もログインさせることになる */
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * パスキーの追加の前に求める「直近の本人確認」の有効時間（人間の判断 2、threat-model.md §4）。
+ * Cookie を盗んだ攻撃者に自分の認証器を登録させないため、Cookie だけでなく直前の本人確認を求める。
+ * 短いほど盗まれた Cookie で使える時間は減るが、確認してから追加の操作を終えるまでの時間は要る
+ */
+export const REAUTH_MAX_AGE_MS = 5 * 60 * 1000;
 
 /**
  * Cookie の名前。本番は `__Host-` 接頭辞を付ける。ブラウザはこの名前の Cookie を
@@ -60,6 +68,8 @@ export function startSession(request: FastifyRequest, reply: FastifyReply, userI
     userId,
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
+    // ログインそのものが本人確認なので、発行した時刻を「最後に本人確認した時刻」にする
+    reauthenticatedAt: now,
     ip: request.ip,
     userAgent: request.headers['user-agent']?.slice(0, 512) ?? null,
   });
@@ -80,6 +90,8 @@ export interface CurrentUser {
   email: string;
   /** false は「パスキーのみ」のユーザー（C の範囲） */
   hasPassword: boolean;
+  /** このセッションで最後に本人確認した時刻（ログイン・再認証）。null はまだしていない */
+  reauthenticatedAt: number | null;
 }
 
 /** 今のリクエストのログインユーザー。ログインしていなければ null */
@@ -91,7 +103,27 @@ export function currentUser(request: FastifyRequest): CurrentUser | null {
   if (!session) return null;
   const user: UserRow | undefined = findUserById(db, session.user_id);
   if (!user) return null;
-  return { id: user.id, email: user.email, hasPassword: user.password_hash !== null };
+  return {
+    id: user.id,
+    email: user.email,
+    hasPassword: user.password_hash !== null,
+    reauthenticatedAt: session.reauthenticated_at,
+  };
+}
+
+/** このセッションで、直近 REAUTH_MAX_AGE_MS 以内に本人確認しているか */
+export function isRecentlyReauthenticated(user: CurrentUser, now = Date.now()): boolean {
+  return user.reauthenticatedAt !== null && now - user.reauthenticatedAt <= REAUTH_MAX_AGE_MS;
+}
+
+/**
+ * 今のセッション（この端末の Cookie が指すもの）に「今、本人確認した」と記録する。
+ * 記録先は今のセッションだけ。同じ人の別の端末のセッションや、他人のセッションには付けない
+ */
+export function markReauthenticated(request: FastifyRequest, userId: number): boolean {
+  const idHash = currentSessionIdHash(request);
+  if (!idHash) return false;
+  return setSessionReauthenticatedAt(request.server.db, idHash, userId, Date.now());
 }
 
 /** 今のセッションの ID ハッシュ。「この端末以外をログアウト」のときに残す 1 つを指すために使う */

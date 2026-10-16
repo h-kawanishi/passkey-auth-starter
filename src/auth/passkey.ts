@@ -107,6 +107,24 @@ export async function createAuthenticationOptions(
   });
 }
 
+/**
+ * 再認証（ログイン中の本人確認）に渡すオプションを作る。ログインと違い、相手はもう分かっているので
+ * allowCredentials にその人の鍵を並べる。ほかの人の鍵や、同じ端末にある別アカウントの鍵を選ばせないため。
+ */
+export async function createReauthenticationOptions(
+  config: Config,
+  existing: Pick<CredentialRow, 'credentialId' | 'transports'>[],
+): Promise<PublicKeyCredentialRequestOptionsJSON> {
+  return generateAuthenticationOptions({
+    rpID: config.rpId, // S5
+    userVerification: 'preferred', // S5
+    allowCredentials: existing.map((c) => ({
+      id: isoBase64URL.fromBuffer(new Uint8Array(c.credentialId)),
+      transports: c.transports,
+    })),
+  });
+}
+
 type StoredCredential = Pick<CredentialRow, 'credentialId' | 'publicKey' | 'counter' | 'transports'>;
 
 // SimpleWebAuthn がカウンタの巻き戻りで投げる例外の文。ライブラリの文言に依存するので、

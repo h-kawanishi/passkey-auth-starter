@@ -2,7 +2,10 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/server';
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from '@simplewebauthn/server';
 import { AUDIT_EVENTS } from '../../src/auth/audit.js';
 import { LOCKOUT_THRESHOLD } from '../../src/auth/lockout.js';
 import type { Db } from '../../src/db/connection.js';
@@ -86,16 +89,19 @@ async function walkEveryFlow(app: FastifyInstance, mailer: CaptureMailer): Promi
   const attacker = new TestBrowser(app, ORIGIN, '203.0.113.9');
   await attacker.login(forger, { claimCredentialId: carolAuth.credentialId }); // passkey.login.failure
 
-  // ---- パスキー: ロック（account.locked → passkey.login.locked）
-  const daveAuth = new SoftAuthenticator(ORIGIN);
-  const dave = new TestBrowser(app, ORIGIN);
-  await dave.signup(daveAuth, uniqueEmail());
-  keepBrowser(dave);
-  await dave.request('POST', '/logout', {});
-  for (let i = 0; i < LOCKOUT_THRESHOLD; i++) {
-    await attacker.login(forger, { claimCredentialId: daveAuth.credentialId });
-  }
-  await dave.login(daveAuth); // passkey.login.locked
+  // ---- 再認証（パスキーの追加の前の本人確認）: パスワードの失敗と成功、パスキーでの成功
+  const erin = await signup(app);
+  secrets.add(erin.password).add(erin.cookie.split('=')[1]!);
+  const erinWrong = randomPassword();
+  secrets.add(erinWrong);
+  await post(app, '/account/reauth', { password: erinWrong }, { cookie: erin.cookie }); // reauth.failure
+  await post(app, '/account/reauth', { password: erin.password }, { cookie: erin.cookie }); // reauth
+  const reauthOpt = await carol.request('POST', '/passkeys/reauth/options', {});
+  keepBrowser(carol);
+  carolAuth.counter += 1;
+  await carol.request('POST', '/passkeys/reauth/verify', {
+    response: carolAuth.authenticate(reauthOpt.json<PublicKeyCredentialRequestOptionsJSON>()),
+  }); // reauth（method: passkey）
 
   // ---- パスワード再設定: 依頼・失敗・完了
   await post(app, '/reset', { email: alice.email }); // password.reset.request
@@ -108,6 +114,9 @@ async function walkEveryFlow(app: FastifyInstance, mailer: CaptureMailer): Promi
 
   return secrets;
 }
+
+// すべての流れを通すので Argon2id の計算（わざと遅い, S1）が十数回入る。並列で走ると既定の 5 秒を超えることがある
+const WALK_TIMEOUT_MS = 30_000;
 
 describe('S12: 監査ログ', () => {
   it('定義したすべてのイベントが、実際の操作で記録される', async () => {
@@ -124,7 +133,7 @@ describe('S12: 監査ログ', () => {
     } finally {
       await app.close();
     }
-  });
+  }, WALK_TIMEOUT_MS);
 
   it('アプリのログ（trace まで）・監査ログ・DB のどこにも、パスワード・セッション ID・引換券・再設定トークンの生値が無い', async () => {
     const stream = new PassThrough();
@@ -151,5 +160,5 @@ describe('S12: 監査ログ', () => {
     } finally {
       await app.close();
     }
-  });
+  }, WALK_TIMEOUT_MS);
 });

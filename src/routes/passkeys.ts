@@ -8,7 +8,7 @@ import type { FastifyPluginCallback } from 'fastify';
 import { createRegistrationOptions, verifyRegistration } from '../auth/passkey.js';
 import { audit } from '../auth/audit.js';
 import { isPlausibleEmail, normalizeEmail } from '../auth/email.js';
-import { currentUser, requireUser, startSession } from '../auth/session.js';
+import { currentUser, isRecentlyReauthenticated, requireUser, startSession } from '../auth/session.js';
 import {
   countCredentialsByUser,
   createUser,
@@ -30,6 +30,12 @@ function cleanDeviceName(raw: unknown): string {
   return name === '' ? DEFAULT_DEVICE_NAME : name;
 }
 
+// 既存アカウントへの追加で、直近の本人確認が無いときの応答。reason で画面が本人確認の欄を開く
+const REAUTH_REQUIRED = {
+  message: 'パスキーを追加する前に、本人確認をしてください（パスワード、または登録済みのパスキー）。',
+  reason: 'reauth_required',
+} as const;
+
 // 同じ文言を 2 か所（開始と完了）で返すので定数にする
 const EMAIL_TAKEN = {
   message: 'このメールアドレスでは登録できません。登録済みならログインするか、パスワードの再設定をお試しください。',
@@ -49,6 +55,12 @@ export const passkeysRoutes: FastifyPluginCallback = (app, _opts, done) => {
     async (req, reply) => {
       const user = currentUser(req);
       if (user) {
+        // 人間の判断 2: 既存アカウントへの追加には、直近 5 分以内の本人確認（ログイン・再認証）を求める。
+        // Cookie を盗んだだけの攻撃者に自分の認証器を登録させないため（threat-model.md §4, routes/reauth.ts）
+        if (!isRecentlyReauthenticated(user)) {
+          audit(req, 'passkey.register.failure', user.id, { reason: 'reauth_required' });
+          return reply.code(403).send(REAUTH_REQUIRED);
+        }
         const existing = listCredentialsByUser(db, user.id);
         const options = await createRegistrationOptions(config, { email: user.email, existing });
         const entry = { kind: 'register', challenge: options.challenge, userId: user.id } as const;
@@ -61,8 +73,8 @@ export const passkeysRoutes: FastifyPluginCallback = (app, _opts, done) => {
       const email = normalizeEmail(req.body?.email ?? '');
       if (!isPlausibleEmail(email)) return reply.code(400).send({ message: 'メールアドレスの形が正しくありません' });
       // 登録済みのメールは新規登録できない。この応答で「登録済み」が分かってしまう点は
-      // パスワードの新規登録（signup.ts）と同じ扱いで、速度はレート制限（S8）で抑える。
-      // 確認メールを挟んで列挙を防ぐかは未決（PR の「人間の判断が必要な点」）
+      // パスワードの新規登録（signup.ts）と同じ扱いで、速度は IP ごとのレート制限（S8）で抑える。
+      // 確認メールを挟む登録は v1.0 の範囲外とし、受け入れたリスクとしている（人間の判断 1、threat-model.md §6）
       if (findUserByEmail(db, email)) return reply.code(409).send(EMAIL_TAKEN);
       const options = await createRegistrationOptions(config, { email, existing: [] });
       const entry = { kind: 'register', challenge: options.challenge, userId: null, email } as const;
@@ -94,6 +106,11 @@ export const passkeysRoutes: FastifyPluginCallback = (app, _opts, done) => {
       const current = currentUser(req);
       if (pending.userId != null && current?.id !== pending.userId) {
         return reply.code(401).send({ message: 'ログインしてください' });
+      }
+      // 人間の判断 2: 完了の時点でも本人確認が 5 分以内かを確かめ直す。開始の後に期限が切れた場合も通さない
+      if (pending.userId != null && current && !isRecentlyReauthenticated(current)) {
+        audit(req, 'passkey.register.failure', current.id, { reason: 'reauth_required' });
+        return reply.code(403).send(REAUTH_REQUIRED);
       }
 
       const result = await verifyRegistration(config, req.body.response, pending.challenge);

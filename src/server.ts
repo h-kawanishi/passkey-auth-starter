@@ -15,6 +15,7 @@ import { logoutRoutes } from './routes/logout.js';
 import { pageRoutes } from './routes/pages.js';
 import { passkeyLoginRoutes } from './routes/passkey-login.js';
 import { passkeysRoutes } from './routes/passkeys.js';
+import { reauthRoutes } from './routes/reauth.js';
 import { resetRoutes } from './routes/reset.js';
 import { signupRoutes } from './routes/signup.js';
 import type { AppOptions } from './types.js';
@@ -89,6 +90,7 @@ export function buildApp(config: Config, options: AppOptions = {}): FastifyInsta
   void app.register(passkeysRoutes);
   void app.register(passkeyLoginRoutes);
   void app.register(accountRoutes);
+  void app.register(reauthRoutes);
   void app.register(resetRoutes);
 
   return app;
