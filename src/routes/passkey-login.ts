@@ -1,7 +1,8 @@
 // パスキーでのログイン（条件付き UI＝自動入力、または「パスキーでログイン」ボタン）。
 //
-// TODO(D: B と統合): S8 のレート制限（IP とアカウントの両方）と S9 の連続失敗ロックを、パスワードの
-//   ログインと同じ仕組みでここにも掛ける。C では B の lockout.ts / レート制限がまだ無いため入れていない。
+// S8: IP ごとのレート制限は deps.passkeyRateLimit（src/http/rate-limit.ts）で掛けている。
+// TODO(D: B と統合): S8 のアカウント単位の制限と S9 の連続失敗ロックを、パスワードのログインと同じ
+//   仕組みでここにも掛ける。C では B の lockout.ts がまだ無いため入れていない。
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyPluginCallback } from 'fastify';
 import {
@@ -13,7 +14,7 @@ import { createSession } from '../auth/session.js';
 import { findCredentialByCredentialId, updateCredentialAfterLogin } from '../db/repo.js';
 import { requireSameOrigin } from '../http/origin.js';
 import { audit, type RouteDeps } from './context.js';
-import { clearCeremonyCookie, readCeremonyTicket, setCeremonyCookie } from './passkey-ceremony.js';
+import { clearCeremonyCookie, issueCeremony, readCeremonyTicket } from './passkey-ceremony.js';
 
 // 利用者にはどの段階で失敗したかを区別せずに返す。「その鍵は登録されていない」と「署名が違う」を
 // 分けて返すと、攻撃者に手がかりを与えるため（パスワードの列挙防止と同じ考え方）
@@ -22,10 +23,12 @@ const LOGIN_FAILED = { error: 'パスキーでログインできませんでし�
 /**
  * 監査ログには失敗の「種類」だけを残す。ライブラリのエラー文にはチャレンジの値などが含まれるため、
  * 文そのものは書かない（S12）。S6 の巻き戻りは不正の兆候なので、種類として区別して残す。
+ * 'counter rollback' は署名が正しいと確かめた上でしか返らない（passkey.ts の verifyAuthentication）。
+ * 秘密鍵を持たない第三者が他人の credential ID で送ってきた応答は 'bad signature' になる。
  */
 function failureKind(reason: string): string {
-  if (/counter/i.test(reason)) return 'counter_rollback'; // S6
-  if (/signature/i.test(reason)) return 'bad_signature';
+  if (reason === 'counter rollback') return 'counter_rollback'; // S6
+  if (reason === 'bad signature') return 'bad_signature';
   if (/challenge/i.test(reason)) return 'bad_challenge';
   if (/origin|rp ?id/i.test(reason)) return 'wrong_site';
   return 'verification_failed';
@@ -35,11 +38,11 @@ function failureKind(reason: string): string {
 export const passkeyLoginRoutes: FastifyPluginCallback<RouteDeps> = (app, deps, done) => {
   const { config, db, challenges } = deps;
   app.addHook('preHandler', requireSameOrigin(config)); // S13
+  app.addHook('preHandler', deps.passkeyRateLimit); // S8: このプラグインのルートはすべてログイン前に呼べる
 
-  app.post('/passkeys/login/options', async (_req, reply) => {
+  app.post('/passkeys/login/options', async (req, reply) => {
     const options = await createAuthenticationOptions(config);
-    const ticket = challenges.put({ kind: 'login', challenge: options.challenge });
-    setCeremonyCookie(config, reply, ticket);
+    if (!issueCeremony(deps, req, reply, { kind: 'login', challenge: options.challenge })) return reply;
     return options;
   });
 

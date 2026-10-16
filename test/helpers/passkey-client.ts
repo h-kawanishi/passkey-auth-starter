@@ -12,6 +12,8 @@ export class TestBrowser {
   constructor(
     private readonly app: FastifyInstance,
     readonly origin: string,
+    /** 送信元の IP。レート制限（S8）の試験で、別々の利用者を装うために変える */
+    readonly ip = '127.0.0.1',
   ) {}
 
   /** Set-Cookie を Cookie 置き場に反映する（Max-Age=0 は削除） */
@@ -38,6 +40,7 @@ export class TestBrowser {
     const res = await this.app.inject({
       method,
       url,
+      remoteAddress: this.ip,
       headers: { origin: this.origin, ...(cookie ? { cookie } : {}), ...headers },
       ...(body === undefined ? {} : { payload: body as Record<string, unknown> }),
     });

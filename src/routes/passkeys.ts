@@ -1,8 +1,9 @@
 // パスキーの登録（新規登録・既存アカウントへの追加）と、一覧・名前変更・削除。
 // ログイン（認証）のルートは passkey-login.ts にある。
 //
-// TODO(D: B と統合): S8 のレート制限（IP とアカウントの両方）。B が入れる @fastify/rate-limit の設定に
-//   このファイルのルートも加える。C では依存の二重追加とロックファイルの衝突を避けるため入れていない。
+// S8: 登録の開始・完了には IP ごとのレート制限（deps.passkeyRateLimit）を掛けている。
+// TODO(D: B と統合): B が入れるレート制限の仕組みに寄せる。C では依存の二重追加とロックファイルの
+//   衝突を避けるため、依存なしの最小実装（src/http/rate-limit.ts）にしている。
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyPluginCallback } from 'fastify';
 import { createRegistrationOptions, verifyRegistration } from '../auth/passkey.js';
@@ -19,7 +20,7 @@ import {
 } from '../db/repo.js';
 import { requireSameOrigin } from '../http/origin.js';
 import { audit, requireUser, type RouteDeps } from './context.js';
-import { clearCeremonyCookie, readCeremonyTicket, setCeremonyCookie } from './passkey-ceremony.js';
+import { clearCeremonyCookie, issueCeremony, readCeremonyTicket } from './passkey-ceremony.js';
 
 const DEVICE_NAME_MAX = 64;
 const DEFAULT_DEVICE_NAME = 'パスキー';
@@ -48,14 +49,17 @@ export const passkeysRoutes: FastifyPluginCallback<RouteDeps> = (app, deps, done
   // 登録の開始。ログイン中なら「このアカウントに追加」、未ログインなら「パスキーで新規登録」
   app.post<{ Body: { email?: string } }>(
     '/passkeys/register/options',
-    { schema: { body: { type: 'object', properties: { email: { type: 'string' } } } } },
+    {
+      preHandler: deps.passkeyRateLimit, // S8: 未ログインでも呼べるため
+      schema: { body: { type: 'object', properties: { email: { type: 'string' } } } },
+    },
     async (req, reply) => {
       const user = getSessionUser(db, config, req);
       if (user) {
         const existing = listCredentialsByUser(db, user.id);
         const options = await createRegistrationOptions(config, { email: user.email, existing });
-        const ticket = challenges.put({ kind: 'register', challenge: options.challenge, userId: user.id });
-        setCeremonyCookie(config, reply, ticket);
+        const entry = { kind: 'register', challenge: options.challenge, userId: user.id } as const;
+        if (!issueCeremony(deps, req, reply, entry)) return reply;
         return options;
       }
 
@@ -69,8 +73,8 @@ export const passkeysRoutes: FastifyPluginCallback<RouteDeps> = (app, deps, done
           .send({ error: 'このメールアドレスでは登録できません。登録済みならログインしてください。' });
       }
       const options = await createRegistrationOptions(config, { email, existing: [] });
-      const ticket = challenges.put({ kind: 'register', challenge: options.challenge, userId: null, email });
-      setCeremonyCookie(config, reply, ticket);
+      const entry = { kind: 'register', challenge: options.challenge, userId: null, email } as const;
+      if (!issueCeremony(deps, req, reply, entry)) return reply;
       return options;
     },
   );
@@ -79,6 +83,7 @@ export const passkeysRoutes: FastifyPluginCallback<RouteDeps> = (app, deps, done
   app.post<{ Body: { response: RegistrationResponseJSON; deviceName?: string } }>(
     '/passkeys/register/verify',
     {
+      preHandler: deps.passkeyRateLimit, // S8
       schema: {
         body: {
           type: 'object',

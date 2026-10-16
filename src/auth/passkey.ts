@@ -107,35 +107,78 @@ export async function createAuthenticationOptions(
   });
 }
 
+type StoredCredential = Pick<CredentialRow, 'credentialId' | 'publicKey' | 'counter' | 'transports'>;
+
+// SimpleWebAuthn がカウンタの巻き戻りで投げる例外の文。ライブラリの文言に依存するので、
+// 単体テスト（S6）で「巻き戻りは counter rollback になる」ことを確かめて、更新時の変化に気づけるようにしている
+const COUNTER_ERROR = /Response counter value/;
+
+/** ライブラリに検証させる。counter を引数にしているのは、巻き戻り時に署名だけを確かめ直すため */
+function runVerify(
+  config: Config,
+  response: AuthenticationResponseJSON,
+  expectedChallenge: string,
+  stored: StoredCredential,
+  counter: number,
+) {
+  return verifyAuthenticationResponse({
+    response,
+    expectedChallenge,
+    expectedOrigin: config.origin,
+    expectedRPID: config.rpId,
+    credential: {
+      id: isoBase64URL.fromBuffer(new Uint8Array(stored.credentialId)),
+      publicKey: new Uint8Array(stored.publicKey),
+      counter, // S6
+      transports: stored.transports,
+    },
+    requireUserVerification: false, // S5: preferred
+  });
+}
+
 /**
  * ログイン応答を、DB に保存してある公開鍵とカウンタで検証する。
  * S6: 応答の署名カウンタが保存値以下（巻き戻り）なら失敗にする。鍵が複製された兆候だからである。
- * 判定自体は SimpleWebAuthn が行い（例外を投げる）、ここでは失敗として受け取る。
+ *
+ * 失敗の reason は監査ログの種類分けに使う（'counter rollback' / 'bad signature' / ライブラリの例外文）。
+ * SimpleWebAuthn はカウンタの検査を署名の検証より先に行うため、そのままだと秘密鍵を持たない第三者でも
+ * 他人の credential ID と小さいカウンタを送るだけで「巻き戻り」と記録させられる（偽の警報）。
+ * そこで巻き戻りの例外が出たら、カウンタを 0 にして署名だけを確かめ直し、署名が正しいときに限り
+ * 'counter rollback' とする。署名が違えば 'bad signature'。どちらでもログインは失敗のまま。
  */
 export async function verifyAuthentication(
   config: Config,
   response: AuthenticationResponseJSON,
   expectedChallenge: string,
-  stored: Pick<CredentialRow, 'credentialId' | 'publicKey' | 'counter' | 'transports'>,
+  stored: StoredCredential,
 ): Promise<Result<{ newCounter: number }>> {
   try {
-    const v = await verifyAuthenticationResponse({
-      response,
-      expectedChallenge,
-      expectedOrigin: config.origin,
-      expectedRPID: config.rpId,
-      credential: {
-        id: isoBase64URL.fromBuffer(new Uint8Array(stored.credentialId)),
-        publicKey: new Uint8Array(stored.publicKey),
-        counter: stored.counter, // S6
-        transports: stored.transports,
-      },
-      requireUserVerification: false, // S5: preferred
-    });
-    if (!v.verified) return { ok: false, reason: 'authentication not verified' };
+    const v = await runVerify(config, response, expectedChallenge, stored, stored.counter);
+    if (!v.verified) return { ok: false, reason: 'bad signature' };
     return { ok: true, newCounter: v.authenticationInfo.newCounter };
   } catch (err) {
+    if (err instanceof Error && COUNTER_ERROR.test(err.message)) {
+      return { ok: false, reason: await rollbackOrBadSignature(config, response, expectedChallenge, stored) };
+    }
     return failure(err);
+  }
+}
+
+/** 巻き戻りの例外が出た応答について、署名が本物かどうかで記録の種類を決める（S6） */
+async function rollbackOrBadSignature(
+  config: Config,
+  response: AuthenticationResponseJSON,
+  expectedChallenge: string,
+  stored: StoredCredential,
+): Promise<'counter rollback' | 'bad signature'> {
+  try {
+    // カウンタ 0 で検証すると巻き戻りの検査は飛ばされ、署名の正否だけが分かる。
+    // ここで verified になっても、呼び出し側には失敗として返す（ログインは許さない）
+    const v = await runVerify(config, response, expectedChallenge, stored, 0);
+    return v.verified ? 'counter rollback' : 'bad signature';
+  } catch {
+    // 1 回目と同じ応答なので、ここで別の例外が出るのは想定外。種類は「署名を確かめられなかった」に倒す
+    return 'bad signature';
   }
 }
 

@@ -1,6 +1,6 @@
 // ルートに渡す共通の部品（設定・DB・チャレンジ置き場）。
 // グローバル変数にせずプラグインの引数で渡すのは、テストで部品を差し替えやすくするため。
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { ChallengeStore } from '../auth/challenges.js';
 import { getSessionUser } from '../auth/session.js';
 import type { Config } from '../config.js';
@@ -11,6 +11,8 @@ export interface RouteDeps {
   config: Config;
   db: Db;
   challenges: ChallengeStore;
+  /** S8: パスキーの開始・完了に掛ける IP ごとのレート制限。登録とログインで同じ数え方を共有する */
+  passkeyRateLimit: preHandlerAsyncHookHandler;
 }
 
 /** S12: 監査ログに書く。時刻と IP はここで埋め、呼び出し側の書き忘れを無くす */

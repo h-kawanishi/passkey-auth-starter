@@ -79,7 +79,30 @@ describe('passkey: 認証', () => {
     const options = await createAuthenticationOptions(config);
     const result = await verifyAuthentication(config, auth.authenticate(options), options.challenge, stored);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/counter/i);
+    if (!result.ok) expect(result.reason).toBe('counter rollback');
+  });
+
+  it('S6: 別の鍵で署名して巻き戻ったカウンタを送っても「巻き戻り」とは判定しない（偽の警報を防ぐ）', async () => {
+    const victim = await registered();
+    const attacker = new SoftAuthenticator(config.origin);
+    victim.stored.counter = 10;
+    attacker.counter = 0;
+    const options = await createAuthenticationOptions(config);
+    // 秘密鍵を持たない第三者が、被害者の credential ID だけを名乗って小さいカウンタを送る
+    const forged = attacker.authenticate(options, { claimCredentialId: victim.stored.credentialId });
+    const result = await verifyAuthentication(config, forged, options.challenge, victim.stored);
+    expect(result).toEqual({ ok: false, reason: 'bad signature' });
+  });
+
+  it('別の鍵の署名（カウンタは進んでいる）は bad signature', async () => {
+    const victim = await registered();
+    const attacker = new SoftAuthenticator(config.origin);
+    victim.stored.counter = 10;
+    attacker.counter = 99;
+    const options = await createAuthenticationOptions(config);
+    const forged = attacker.authenticate(options, { claimCredentialId: victim.stored.credentialId });
+    const result = await verifyAuthentication(config, forged, options.challenge, victim.stored);
+    expect(result).toEqual({ ok: false, reason: 'bad signature' });
   });
 
   it('S6: 署名カウンタが保存値と同じ（進んでいない）応答も拒否する', async () => {

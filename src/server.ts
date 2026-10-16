@@ -6,6 +6,7 @@ import { ChallengeStore } from './auth/challenges.js';
 import { ConfigError, loadConfig, type Config } from './config.js';
 import { openDatabase, type Db } from './db/connection.js';
 import { migrate } from './db/migrate.js';
+import { rateLimitByIp } from './http/rate-limit.js';
 import { accountRoutes } from './routes/account.js';
 import type { RouteDeps } from './routes/context.js';
 import { loginRoutes } from './routes/login.js';
@@ -52,7 +53,14 @@ export function buildApp(config: Config, options: BuildOptions = {}): FastifyIns
       db.close();
     });
   }
-  const deps: RouteDeps = { config, db, challenges: new ChallengeStore() };
+  const deps: RouteDeps = {
+    config,
+    db,
+    challenges: new ChallengeStore(),
+    // S8: 1 回のログイン・登録は開始と完了の 2 要求。1 分 30 要求なら、同じ IP（会社の共有回線など）から
+    // 1 分に 15 回までは通り、総当たりや置き場を埋める妨害は 1 分あたり 30 要求で頭打ちになる
+    passkeyRateLimit: rateLimitByIp({ max: 30, windowMs: 60_000 }),
+  };
 
   void app.register(pageRoutes, deps);
   void app.register(signupRoutes);

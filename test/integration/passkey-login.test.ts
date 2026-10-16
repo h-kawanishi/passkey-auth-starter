@@ -76,7 +76,7 @@ describe('パスキーでの登録とログイン（結合）', () => {
     const sid = setCookie.find((c) => c.startsWith('sid='));
     expect(sid).toMatch(/HttpOnly/);
     expect(sid).toMatch(/SameSite=Lax/);
-    // 開発・テストは http なので Secure は付かない（本番の Secure は config の単体テストで確かめている）
+    // 開発・テストは http なので Secure は付かない（本番の __Host-sid と Secure は passkey-hardening.test.ts で確かめている）
     expect(sid).not.toMatch(/Secure/);
 
     const rawId = browser.cookies.get('sid');
