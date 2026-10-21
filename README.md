@@ -8,7 +8,7 @@
 - 言語: TypeScript / Node.js 22 / Fastify
 - パスキー: SimpleWebAuthn ／ パスワード: Argon2id ／ DB: SQLite
 - ライセンス: MIT
-- 設計書: [docs/design.md](docs/design.md) ／ 脅威モデル: [docs/threat-model.md](docs/threat-model.md) ／ 実装計画: [docs/plan.md](docs/plan.md)
+- 設計書: [docs/design.md](docs/design.md) ／ 脅威モデル: [docs/threat-model.md](docs/threat-model.md) ／ 実装計画: [docs/plan.md](docs/plan.md) ／ 変更履歴: [CHANGELOG.md](CHANGELOG.md)
 
 紹介ページと解説の HTML 版: https://jumpstack.co.jp/passkey-auth-starter/ （準備中）
 
@@ -93,7 +93,7 @@ It aims to be usable as-is as the foundation for real projects, and readable eno
 - Stack: TypeScript / Node.js 22 / Fastify
 - Passkeys: SimpleWebAuthn / Passwords: Argon2id / Database: SQLite
 - License: MIT
-- Design: [docs/design.md](docs/design.md) / Threat model: [docs/threat-model.md](docs/threat-model.md) (both in Japanese)
+- Design: [docs/design.md](docs/design.md) / Threat model: [docs/threat-model.md](docs/threat-model.md) / Changelog: [CHANGELOG.md](CHANGELOG.md) (all in Japanese)
 
 ## Features
 
